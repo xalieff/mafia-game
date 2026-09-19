@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0E1120">
+<title>Mafia</title>
+<style>
+  /* ───────────────────────────── Tokens ───────────────────────────── */
+  :root {
+    /* Phase atmospheres (the whole screen shifts with the game phase) */
+    --neutral: #141827;
+    --night: #0B0E1C;
+    --dusk: #241B2E;
+    --verdict: #2C1A25;
+    --bg: var(--neutral);
+    --glow: rgba(240, 196, 90, 0.07);
+
+    --panel: #1B2036;
+    --panel-2: #262C48;
+    --line: #3A4166;
+    --text: #ECEAF4;
+    --muted: #A9A7C2;
+
+    --lamp: #F0C45A;      /* primary action: streetlamp amber */
+    --lamp-ink: #241A00;
+    --mafia: #E0506F;
+    --doctor: #4CC7AC;
+    --detective: #6EA8F2;
+    --town: #D2BE92;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  body[data-phase="night"]  { --bg: var(--night);   --glow: rgba(110, 168, 242, 0.20); }
+  body[data-phase="day"]    { --bg: var(--dusk);    --glow: rgba(240, 196, 90, 0.20); }
+  body[data-phase="voting"] { --bg: var(--verdict); --glow: rgba(224, 80, 111, 0.20); }
+  body[data-phase="ended"][data-winner="Mafia"] { --bg: var(--verdict); --glow: rgba(224, 80, 111, 0.22); }
+  body[data-phase="ended"][data-winner="Town"]  { --bg: #172321;        --glow: rgba(76, 199, 172, 0.20); }
+
+  [data-role="Mafia"]       { --role: var(--mafia); }
+  [data-role="Doctor"]      { --role: var(--doctor); }
+  [data-role="Detective"]   { --role: var(--detective); }
+  [data-role="Townsperson"] { --role: var(--town); }
+
+  /* ───────────────────────────── Base ───────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { color-scheme: dark; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    font: 400 1rem/1.5 var(--sans);
+    color: var(--text);
+    background:
+      radial-gradient(120% 55% at 85% -8%, var(--glow), transparent 62%),
+      var(--bg);
+    background-color: var(--bg);
+    transition: background-color 700ms ease;
+  }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 700; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 1.75rem; }
+  h3 { font-size: 1.25rem; }
+  p { margin: 0; }
+  ul { margin: 0; padding: 0; list-style: none; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--lamp); outline-offset: 2px; }
+
+  .app {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 0 16px calc(32px + env(safe-area-inset-bottom));
+  }
+  main { display: grid; gap: 16px; padding-top: 16px; }
+  .screen { display: grid; gap: 16px; }
+  .muted { color: var(--muted); }
+  .center { text-align: center; }
+  .stack { display: grid; gap: 16px; }
+  .lede { color: var(--muted); max-width: 46ch; }
+  .hint { color: var(--muted); font-size: 0.875rem; }
+
+  /* ───────────────────────────── Top bar ───────────────────────────── */
+  .topbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+    margin: 0 -16px;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    transition: background-color 700ms ease;
+  }
+  .topbar-left, .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .brand { font: 700 1.25rem var(--serif); }
+  .room-chip {
+    font: 600 0.875rem var(--mono); letter-spacing: 0.08em;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+  }
+  .phase-pill {
+    display: inline-flex; align-items: baseline; gap: 8px;
+    padding: 4px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
+    font-size: 0.9rem; font-weight: 600;
+  }
+  .phase-pill time { font-variant-numeric: tabular-nums; color: var(--lamp); }
+  .phase-pill time.urgent { color: var(--mafia); }
+
+  .conn {
+    position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    z-index: 30; padding: 8px 16px; border-radius: 999px; background: var(--mafia); color: #14060A; font-weight: 600;
+  }
+
+  /* ───────────────────────────── Cards, buttons, fields ───────────────────────────── */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; gap: 14px; }
+  .card > h3 { margin-bottom: -4px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 48px; padding: 0 20px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font-weight: 600; cursor: pointer; text-align: center;
+    transition: background-color 150ms ease, transform 100ms ease;
+  }
+  .btn:hover:not([disabled]) { background: #303759; }
+  .btn:active:not([disabled]) { transform: translateY(1px); }
+  .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .btn-primary { background: var(--lamp); color: var(--lamp-ink); border-color: transparent; }
+  .btn-primary:hover:not([disabled]) { background: #F5D07A; }
+  .btn-sm { min-height: 44px; padding: 0 14px; font-size: 0.95rem; }
+  .btn-xs { min-height: 36px; padding: 0 12px; font-size: 0.85rem; }
+  .btn-wide { width: 100%; }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pick { min-width: 108px; }
+  .pick[aria-pressed="true"] { background: var(--accent, var(--lamp)); color: #10131F; border-color: transparent; }
+  .pick[aria-pressed="true"]:hover:not([disabled]) { background: var(--accent, var(--lamp)); }
+
+  .field { display: grid; gap: 6px; }
+  .field label { font-weight: 600; }
+  input[type="text"] {
+    width: 100%; min-height: 50px; padding: 0 14px; font-size: 1rem;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 12px; color: var(--text);
+    transition: border-color 150ms ease;
+  }
+  input[type="text"]::placeholder { color: #6F6D8C; }
+  input[type="text"]:focus-visible { outline: none; border-color: var(--lamp); box-shadow: 0 0 0 3px rgba(240, 196, 90, 0.25); }
+  input[type="text"][disabled] { opacity: 0.5; }
+  #codeInput { font-family: var(--mono); letter-spacing: 0.3em; text-transform: uppercase; }
+
+  /* ───────────────────────────── Join screen ───────────────────────────── */
+  .hero { font-size: clamp(3.5rem, 18vw, 5.5rem); letter-spacing: -0.03em; padding-top: 12px; }
+  .rules summary { cursor: pointer; font-weight: 600; }
+  .rules ul { display: grid; gap: 8px; margin-top: 12px; color: var(--muted); padding-left: 18px; list-style: disc; }
+  .rules strong { color: var(--text); }
+
+  /* ───────────────────────────── Lists & rows ───────────────────────────── */
+  .list { display: grid; gap: 8px; }
+  .row {
+    display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 8px 12px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .row.out { opacity: 0.7; }
+  .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .row-name { font-weight: 600; overflow-wrap: anywhere; }
+  .row-sub { font-size: 0.85rem; color: var(--muted); }
+  .row-tags { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .avatar {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    display: grid; place-items: center; font: 700 1.05rem var(--serif);
+  }
+  .tag {
+    display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
+    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+  }
+  .tag.host { color: var(--lamp); border-color: rgba(240, 196, 90, 0.5); }
+  .tag.danger { color: var(--mafia); border-color: rgba(224, 80, 111, 0.55); }
+  .tag.ok { color: var(--doctor); border-color: rgba(76, 199, 172, 0.55); }
+  .tag.votes { color: var(--lamp); border-color: rgba(240, 196, 90, 0.5); }
+  .tag[data-role] { color: var(--role); border-color: var(--role); }
+  .offline-dot { width: 8px; height: 8px; border-radius: 50%; background: #6F6D8C; display: inline-block; }
+
+  /* ───────────────────────────── Lobby ───────────────────────────── */
+  .code {
+    font: 700 clamp(3rem, 16vw, 4.5rem)/1 var(--serif); letter-spacing: 0.14em;
+    padding-left: 0.14em; /* optically balances trailing letter-spacing */
+    color: var(--lamp); text-align: center; user-select: all;
+  }
+
+  /* ───────────────────────────── Role card ───────────────────────────── */
+  .screen-title { font-size: 1.75rem; }
+  .role-stage { display: grid; place-items: center; perspective: 1200px; padding: 6px 0 4px; }
+  .role-card {
+    position: relative; width: min(78vw, 290px); aspect-ratio: 5 / 7;
+    transform-style: preserve-3d; transition: transform 650ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .role-card.revealed { transform: rotateY(180deg); }
+  .face {
+    position: absolute; inset: 0; border-radius: 22px; padding: 22px;
+    -webkit-backface-visibility: hidden; backface-visibility: hidden;
+    display: flex; flex-direction: column; gap: 12px; overflow: auto;
+  }
+  .face.back {
+    align-items: center; justify-content: center; text-align: center;
+    background: repeating-linear-gradient(135deg, #1E2442 0 12px, #252C50 12px 24px);
+    border: 2px solid var(--line);
+  }
+  .face.back .mark { font: 700 4.5rem/1 var(--serif); color: var(--lamp); }
+  .face.front { transform: rotateY(180deg); background: var(--panel); border: 2px solid var(--role, var(--line)); }
+  .face.front h3 { font-size: 2.1rem; color: var(--role, var(--text)); }
+  .face.front .goal { font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; margin-top: auto; }
+  .team { display: grid; gap: 6px; }
+  .team .row { min-height: 44px; padding: 4px 10px; }
+
+  /* ───────────────────────────── Night ───────────────────────────── */
+  .hero-card { text-align: center; justify-items: center; padding: 26px 18px; }
+  .moon { width: 64px; height: 64px; color: var(--detective); }
+  body[data-phase="day"] .moon, body[data-phase="voting"] .moon { display: none; }
+  .status { font-size: 0.95rem; color: var(--lamp); min-height: 1.4em; }
+
+  /* ───────────────────────────── Day / vote ───────────────────────────── */
+  .announce { border-left: 5px solid var(--lamp); }
+  .announce.deadly { border-left-color: var(--mafia); }
+  .announce p { font-size: 1.1rem; }
+
+  /* ───────────────────────────── Game over ───────────────────────────── */
+  .verdict { text-align: center; padding: 26px 18px; }
+  .verdict[data-winner="Mafia"] h2 { color: var(--mafia); }
+  .verdict[data-winner="Town"] h2 { color: var(--doctor); }
+  .verdict h2 { font-size: 2.2rem; }
+
+  /* ───────────────────────────── Banner, notes, chat ───────────────────────────── */
+  .dead-banner {
+    display: grid; gap: 2px; padding: 12px 16px; border-radius: 14px;
+    background: rgba(224, 80, 111, 0.14); border: 1px solid rgba(224, 80, 111, 0.55);
+  }
+  .dead-banner strong { color: var(--mafia); font-family: var(--serif); font-size: 1.15rem; }
+  .notes li { padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+  .notes .bad { color: var(--mafia); font-weight: 600; }
+  .notes .good { color: var(--town); font-weight: 600; }
+
+  .chat-log {
+    display: grid; gap: 6px; align-content: start; max-height: 240px; overflow-y: auto;
+    padding: 10px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); min-height: 64px;
+  }
+  .msg { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; overflow-wrap: anywhere; }
+  .msg-name { font-weight: 700; color: var(--lamp); }
+  .msg.mine .msg-name { color: var(--detective); }
+  .msg.mafia .msg-name { color: var(--mafia); }
+  .msg.dead { color: var(--muted); font-style: italic; }
+  .msg-empty { color: var(--muted); font-size: 0.9rem; }
+  .chat-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .chat-channel { font-size: 0.875rem; color: var(--muted); }
+
+  /* ───────────────────────────── Toasts & modal ───────────────────────────── */
+  .toasts {
+    position: fixed; z-index: 40; left: 0; right: 0; top: calc(10px + env(safe-area-inset-top));
+    display: grid; gap: 8px; justify-items: center; padding: 0 16px; pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto; max-width: 520px; width: 100%; padding: 12px 16px; border-radius: 12px;
+    background: var(--panel-2); border: 1px solid var(--line); border-left-width: 5px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    animation: toast-in 180ms ease-out;
+  }
+  .toast.error { border-left-color: var(--mafia); }
+  .toast.ok { border-left-color: var(--doctor); }
+  .toast.info { border-left-color: var(--detective); }
+  @keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  dialog.modal {
+    width: min(92vw, 420px); padding: 0; border: 1px solid var(--line); border-radius: 20px;
+    background: var(--panel); color: var(--text);
+  }
+  dialog.modal::backdrop { background: rgba(4, 5, 12, 0.72); }
+  .modal-body { display: grid; gap: 14px; padding: 22px; }
+  .modal-body h2 { font-size: 1.5rem; }
+  .modal[data-tone="mafia"] h2 { color: var(--mafia); }
+  .modal[data-tone="town"] h2 { color: var(--doctor); }
+  .modal-big { font: 700 1.8rem/1.2 var(--serif); overflow-wrap: anywhere; }
+  .modal-big.mafia { color: var(--mafia); }
+  .modal-big.town { color: var(--town); }
+  .vote-line { padding: 6px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  .vote-line:last-child { border-bottom: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+  @media (max-width: 380px) {
+    .btn-row { grid-template-columns: 1fr; }
+    .pick { min-width: 92px; }
+  }
+</style>
+</head>
+<body data-phase="none">
+<noscript><p style="padding:24px">This game needs JavaScript to run.</p></noscript>
+
+<div class="app">
+  <!-- Top bar (only while in a room) -->
+  <header class="topbar" id="topbar" hidden>
+    <div class="topbar-left">
+      <span class="brand">Mafia</span>
+      <span class="room-chip" id="roomChip"></span>
+    </div>
+    <div class="topbar-right">
+      <div class="phase-pill"><span id="phaseLabel"></span><time id="phaseTimer" hidden></time></div>
+      <button class="btn btn-xs" id="roleBtn" type="button" hidden>My Role</button>
+      <button class="btn btn-xs" id="leaveBtn" type="button">Leave</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="dead-banner" id="deadBanner" role="status" hidden>
+      <strong>You are dead. Spectating.</strong>
+      <span class="muted">You can watch and chat with other dead players, but you can't act or vote.</span>
+    </div>
+
+    <!-- Screen 1: Join / Create -->
+    <section class="screen" id="screen-join" aria-labelledby="joinTitle">
+      <h1 class="hero" id="joinTitle">Mafia</h1>
+      <p class="lede">A party game of secret roles and quiet suspicion. Everyone plays from their own phone, and nobody needs an account.</p>
+      <form class="card" id="joinForm" autocomplete="off" novalidate>
+        <div class="field">
+          <label for="nameInput">Nickname</label>
+          <input type="text" id="nameInput" maxlength="16" autocomplete="nickname" autocapitalize="words" spellcheck="false" placeholder="What should we call you?">
+        </div>
+        <div class="field">
+          <label for="codeInput">Room code</label>
+          <input type="text" id="codeInput" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD" aria-describedby="codeHint">
+          <p class="hint" id="codeHint"></p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="button" id="createBtn">Create Room</button>
+          <button class="btn" type="button" id="joinBtn">Join Room</button>
+        </div>
+      </form>
+      <details class="card rules">
+        <summary>How to play</summary>
+        <ul>
+          <li>Needs <strong>4 to 15 players</strong>. Everyone gets a secret role.</li>
+          <li><strong>Mafia</strong> pick someone to eliminate each night. <strong>Doctor</strong> protects one person. <strong>Detective</strong> checks whether someone is Mafia.</li>
+          <li>Each morning, the town learns who died, talks it through, then votes someone out.</li>
+          <li><strong>Town wins</strong> when all the Mafia are gone. <strong>Mafia wins</strong> when they equal or outnumber the Town.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- Screen 2: Lobby -->
+    <section class="screen" id="screen-lobby" aria-label="Lobby" hidden>
+      <div class="card center">
+        <div class="code" id="lobbyCode" role="text"></div>
+        <p class="muted">Share this room code, or send the invite link.</p>
+        <button class="btn" type="button" id="copyLinkBtn">Copy Invite Link</button>
+      </div>
+      <div class="card">
+        <h3 id="lobbyCount">Players</h3>
+        <ul class="list" id="lobbyList"></ul>
+      </div>
+      <div id="hostControls" class="stack" hidden>
+        <button class="btn btn-primary btn-wide" type="button" id="startBtn">Start Game</button>
+        <p class="hint center" id="startHint"></p>
+      </div>
+      <p class="muted center" id="guestWait" hidden>Waiting for the host to start the game.</p>
+    </section>
+
+    <!-- Screen 3: Role card -->
+    <section class="screen" id="screen-role" aria-label="Your role" hidden>
+      <h2 class="screen-title">Your role</h2>
+      <p class="lede">Only you should see this. Anyone nearby can read your screen, so hide your role when you're done.</p>
+      <div class="role-stage">
+        <div class="role-card" id="roleCard" data-role="">
+          <div class="face back" id="roleBack">
+            <span class="mark" aria-hidden="true">?</span>
+            <p class="muted">Role hidden</p>
+          </div>
+          <div class="face front" id="roleFront" aria-hidden="true">
+            <h3 id="roleName"></h3>
+            <p id="roleDesc"></p>
+            <div class="team" id="roleTeam" hidden></div>
+            <p class="goal" id="roleGoal"></p>
+          </div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" type="button" id="toggleRoleBtn">Show Role</button>
+        <button class="btn" type="button" id="roleContinueBtn">Continue</button>
+      </div>
+    </section>
+
+    <!-- Screen 4: Night -->
+    <section class="screen" id="screen-night" aria-label="Night phase" hidden>
+      <div class="card hero-card">
+        <svg class="moon" viewBox="0 0 64 64" aria-hidden="true">
+          <defs><mask id="moonMask"><rect width="64" height="64" fill="#fff"/><circle cx="43" cy="26" r="20" fill="#000"/></mask></defs>
+          <circle cx="30" cy="33" r="22" fill="currentColor" mask="url(#moonMask)"/>
+        </svg>
+        <h2 id="nightTitle"></h2>
+        <p class="muted" id="nightText"></p>
+      </div>
+      <div class="card" id="nightActions" hidden>
+        <h3 id="nightHeading"></h3>
+        <p class="muted" id="nightHelp"></p>
+        <ul class="list" id="nightList"></ul>
+        <p class="status" id="nightStatus" role="status"></p>
+      </div>
+    </section>
+
+    <!-- Screen 5: Day / Voting -->
+    <section class="screen" id="screen-day" aria-label="Day phase" hidden>
+      <div class="card announce" id="dayAnnounce">
+        <h2 id="dayTitle"></h2>
+        <p id="dayText" aria-live="polite"></p>
+      </div>
+      <div class="card">
+        <h3 id="dayHeading"></h3>
+        <p class="muted" id="dayStatus"></p>
+        <ul class="list" id="voteList"></ul>
+        <button class="btn btn-wide pick" type="button" id="skipVoteBtn" style="--accent: var(--detective)"></button>
+        <button class="btn btn-primary btn-wide" type="button" id="advanceBtn" hidden>Start Voting Now</button>
+      </div>
+      <div class="card" id="outCard" hidden>
+        <h3>Out of the game</h3>
+        <ul class="list" id="outList"></ul>
+      </div>
+    </section>
+
+    <!-- Screen 6: Game over -->
+    <section class="screen" id="screen-over" aria-label="Game over" hidden>
+      <div class="card verdict" id="verdict" data-winner="">
+        <h2 id="overTitle"></h2>
+        <p id="overText"></p>
+        <p class="muted" id="overYou"></p>
+      </div>
+      <div class="card">
+        <h3>Final roles</h3>
+        <ul class="list" id="overList"></ul>
+      </div>
+      <button class="btn btn-primary btn-wide" type="button" id="returnBtn">Return to Lobby</button>
+      <p class="hint center" id="returnHint" hidden>Only the host can return everyone to the lobby.</p>
+    </section>
+
+    <!-- Detective notes (shared across night/day) -->
+    <section class="card notes" id="notes" hidden>
+      <h3>Investigation notes</h3>
+      <ul class="list" id="notesList"></ul>
+    </section>
+
+    <!-- Chat (shared) -->
+    <section class="card" id="chat" aria-label="Chat" hidden>
+      <h3>Chat</h3>
+      <p class="chat-channel" id="chatChannel"></p>
+      <ul class="chat-log" id="chatLog" aria-live="polite"></ul>
+      <form class="chat-form" id="chatForm" autocomplete="off">
+        <input type="text" id="chatInput" maxlength="300" placeholder="Type a message" aria-label="Chat message">
+        <button class="btn btn-sm" type="submit" id="chatSend">Send</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="conn" id="conn" role="status" hidden>Connection lost. Reconnecting...</div>
+
+<dialog class="modal" id="modal" aria-labelledby="modalTitle">
+  <div class="modal-body">
+    <h2 id="modalTitle"></h2>
+    <div id="modalBody" class="stack"></div>
+    <button class="btn btn-primary btn-wide" type="button" id="modalOk">OK</button>
+  </div>
+</dialog>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  /* ══════════════════════════ Socket & app state ══════════════════════════ */
+
+  const socket = io(); // auto-detects the server URL
+  const $ = (id) => document.getElementById(id);
+
+  /** Latest personalised `room_state` from the server (null = not in a room). */
+  let state = null;
+  let clockOffset = 0;
+  let busy = false;
+
+  /** Client-only UI state. */
+  const ui = {
+    showRoleCard: false,
+    roleRevealed: false,
+    dayEvent: null,
+    overText: null,
+    chat: [],
+    replaced: false,
+    prevPhase: null,
+  };
+
+  const MIN_NAME = 2;
+  const DEFAULT_HINT = 'Joining a friend? Enter their 4-character code. Creating? Leave it empty for a random code, or choose your own.';
+  const IN_GAME = new Set(['night', 'day', 'voting']);
+
+  const ROLE_INFO = {
+    Mafia: {
+      desc: 'Each night, you and your team choose one person to eliminate. By day, blend in and stay out of suspicion.',
+      goal: 'You win when the Mafia equal or outnumber the Town.',
+    },
+    Doctor: {
+      desc: 'Each night, choose one person to protect. If the Mafia target them, they survive. You may protect yourself.',
+      goal: 'You win when every Mafia member is eliminated.',
+    },
+    Detective: {
+      desc: 'Each night, investigate one person to learn whether they are Mafia. Use what you learn carefully.',
+      goal: 'You win when every Mafia member is eliminated.',
+    },
+    Townsperson: {
+      desc: 'You have no night power. Watch, listen, and use your vote to find the Mafia.',
+      goal: 'You win when every Mafia member is eliminated.',
+    },
+  };
+
+  const NIGHT_ACTIONS = {
+    Mafia: {
+      heading: 'Choose someone to eliminate',
+      help: 'Your team decides by most picks. If you split, one of the top picks is chosen at random.',
+      verb: 'Eliminate', done: 'Targeted', accent: 'var(--mafia)',
+      targets: (me, p) => p.alive && p.role !== 'Mafia',
+    },
+    Doctor: {
+      heading: 'Choose someone to protect',
+      help: 'If the Mafia target your patient, they survive the night. You may protect yourself.',
+      verb: 'Protect', done: 'Protected', accent: 'var(--doctor)',
+      targets: (me, p) => p.alive,
+    },
+    Detective: {
+      heading: 'Choose someone to investigate',
+      help: 'You learn whether they are Mafia. You can investigate one person each night.',
+      verb: 'Investigate', done: 'Investigated', accent: 'var(--detective)',
+      targets: (me, p) => p.alive && p.id !== me.id,
+    },
+  };
+
+  /* ══════════════════════════ Small helpers ══════════════════════════ */
+
+  /** Builds DOM safely: text always goes through textContent / text nodes. */
+  function el(tag, props = {}, ...kids) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (value === false || value == null) continue;
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = value;
+      else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? '' : value);
+    }
+    for (const kid of kids.flat()) {
+      if (kid == null || kid === false) continue;
+      node.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    }
+    return node;
+  }
+
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const nameOf = (id) => state?.players.find((p) => p.id === id)?.name ?? 'Unknown';
+
+  const store = {
+    get(key) { try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; } },
+    set(key, value) { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* storage blocked */ } },
+    del(key) { try { sessionStorage.removeItem(key); } catch { /* storage blocked */ } },
+  };
+  const remember = {
+    get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch { /* storage blocked */ } },
+  };
+
+  function toast(message, kind = 'error') {
+    const box = $('toasts');
+    const node = el('div', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status', text: message });
+    node.addEventListener('click', () => node.remove());
+    box.append(node);
+    while (box.children.length > 3) box.firstChild.remove();
+    setTimeout(() => node.remove(), 5000);
+  }
+
+  function updateUrl(code) {
+    try { history.replaceState(null, '', code ? `/room/${code}` : '/'); } catch { /* e.g. file:// */ }
+  }
+
+  function codeFromUrl() {
+    const m = location.pathname.match(/^\/room\/([A-Za-z0-9]{4})\/?$/);
+    if (m) return m[1].toUpperCase();
+    const q = new URLSearchParams(location.search).get('room');
+    return q && /^[A-Za-z0-9]{4}$/.test(q) ? q.toUpperCase() : '';
+  }
+
+  /** Emit with ack, timeout and uniform error display. */
+  function send(event, data, done) {
+    if (!socket.connected) {
+      toast('Not connected to the server yet. Trying to reconnect...');
+      if (done) done(null);
+      return;
+    }
+    socket.timeout(8000).emit(event, data, (err, res) => {
+      if (err) {
+        toast('The server took too long to respond. Try again.');
+        if (done) done(null);
+        return;
+      }
+      if (!res || !res.ok) toast((res && res.error) || 'Something went wrong.');
+      if (done) done(res);
+    });
+  }
+
+  function lastLogText(type) {
+    const entry = [...(state?.log ?? [])].reverse().find((l) => l.type === type);
+    return entry ? entry.text : '';
+  }
+
+  /* ══════════════════════════ Modal queue ══════════════════════════ */
+
+  const modal = $('modal');
+  const modalQueue = [];
+
+  function modalIsOpen() { return modal.hasAttribute('open'); }
+
+  function showModal({ title, body, tone = '', ok = 'OK' }) {
+    modalQueue.push({ title, body, tone, ok });
+    if (!modalIsOpen()) nextModal();
+  }
+
+  function nextModal() {
+    const m = modalQueue.shift();
+    if (!m) return;
+    $('modalTitle').textContent = m.title;
+    $('modalBody').replaceChildren(...[].concat(m.body));
+    $('modalOk').textContent = m.ok;
+    modal.dataset.tone = m.tone;
+    if (typeof modal.showModal === 'function') modal.showModal();
+    else modal.setAttribute('open', '');
+    $('modalOk').focus();
+  }
+
+  $('modalOk').addEventListener('click', () => {
+    if (typeof modal.close === 'function') modal.close();
+    else { modal.removeAttribute('open'); nextModal(); }
+  });
+  modal.addEventListener('close', nextModal);
+
+  /* ══════════════════════════ Reusable row builders ══════════════════════════ */
+
+  function avatar(name) {
+    let hue = 0;
+    for (const ch of name) hue = (hue * 31 + ch.codePointAt(0)) % 360;
+    return el('span', {
+      class: 'avatar', 'aria-hidden': 'true',
+      style: `background:hsl(${hue} 38% 28%);color:hsl(${hue} 80% 86%)`,
+    }, (Array.from(name)[0] || '?').toUpperCase());
+  }
+
+  const tag = (text, kind = '') => el('span', { class: `tag ${kind}`.trim(), text });
+
+  function roleTag(role) {
+    return el('span', { class: 'tag', 'data-role': role, text: role });
+  }
+
+  function playerRow(p, { tags = [], sub = null, button = null } = {}) {
+    return el('li', { class: `row${p.alive === false ? ' out' : ''}` },
+      avatar(p.name),
+      el('div', { class: 'row-main' },
+        el('span', { class: 'row-name', text: p.name }),
+        sub ? el('span', { class: 'row-sub', text: sub }) : null),
+      el('div', { class: 'row-tags' }, tags),
+      button);
+  }
+
+  function pickButton({ label, pressed, disabled, onClick, accent }) {
+    return el('button', {
+      class: 'btn btn-sm pick', type: 'button',
+      'aria-pressed': String(!!pressed), disabled: !!disabled,
+      style: accent ? `--accent:${accent}` : false, onclick: onClick,
+    }, label);
+  }
+
+  /* ══════════════════════════ Rendering ══════════════════════════ */
+
+  const SCREENS = ['join', 'lobby', 'role', 'night', 'day', 'over'];
+
+  function pickScreen() {
+    if (!state) return 'join';
+    if (state.phase === 'lobby') return 'lobby';
+    if (state.phase === 'ended') return 'over';
+    if (ui.showRoleCard && state.you.role) return 'role';
+    return state.phase === 'night' ? 'night' : 'day';
+  }
+
+  function render() {
+    const phase = state ? state.phase : 'none';
+    document.body.dataset.phase = phase;
+    document.body.dataset.winner = state && state.winner ? state.winner : '';
+
+    const screen = pickScreen();
+    for (const name of SCREENS) $(`screen-${name}`).hidden = name !== screen;
+
+    renderTopbar();
+    if (state) {
+      if (screen === 'lobby') renderLobby();
+      if (screen === 'role') renderRole();
+      if (screen === 'night') renderNight();
+      if (screen === 'day') renderDay();
+      if (screen === 'over') renderOver();
+    }
+    renderDeadBanner(screen);
+    renderNotes(screen);
+    renderChat(screen);
+    tick();
+  }
+
+  function renderTopbar() {
+    $('topbar').hidden = !state;
+    if (!state) return;
+    $('roomChip').textContent = `Room ${state.code}`;
+    const labels = {
+      lobby: 'Lobby',
+      night: `Night ${state.day}`,
+      day: `Day ${state.day}`,
+      voting: `Vote, day ${state.day}`,
+      ended: 'Game over',
+    };
+    $('phaseLabel').textContent = labels[state.phase] || '';
+    const showRoleBtn = IN_GAME.has(state.phase) && !!state.you.role;
+    $('roleBtn').hidden = !showRoleBtn;
+    $('roleBtn').textContent = ui.showRoleCard ? 'Back to Game' : 'My Role';
+  }
+
+  /* ── Screen 2: Lobby ── */
+  function renderLobby() {
+    const me = state.you;
+    $('lobbyCode').textContent = state.code;
+    $('lobbyCount').textContent = `Players (${state.players.length} of ${state.maxPlayers})`;
+
+    $('lobbyList').replaceChildren(...state.players.map((p) => {
+      const tags = [];
+      if (p.isHost) tags.push(tag('Host', 'host'));
+      if (p.id === me.id) tags.push(tag('You'));
+      if (!p.connected) tags.push(tag('Offline'));
+      const kick = me.isHost && p.id !== me.id
+        ? el('button', {
+            class: 'btn btn-xs', type: 'button', 'aria-label': `Remove ${p.name}`,
+            onclick: () => send('kick_player', { playerId: p.id }),
+          }, 'Remove')
+        : null;
+      return playerRow(p, { tags, button: kick });
+    }));
+
+    const connected = state.players.filter((p) => p.connected).length;
+    $('hostControls').hidden = !me.isHost;
+    $('guestWait').hidden = me.isHost;
+    $('startHint').textContent = connected >= state.minPlayers
+      ? `${plural(connected, 'player')} ready. Start whenever everyone is in.`
+      : `Need at least ${state.minPlayers} players to start. ${plural(connected, 'player')} connected so far.`;
+  }
+
+  /* ── Screen 3: Role card ── */
+  function renderRole() {
+    const role = state.you.role;
+    const info = ROLE_INFO[role] || { desc: '', goal: '' };
+    $('roleCard').dataset.role = role;
+    $('roleCard').classList.toggle('revealed', ui.roleRevealed);
+    $('roleName').textContent = role;
+    $('roleDesc').textContent = info.desc;
+    $('roleGoal').textContent = info.goal;
+    $('roleFront').setAttribute('aria-hidden', String(!ui.roleRevealed));
+    $('roleBack').setAttribute('aria-hidden', String(ui.roleRevealed));
+    $('toggleRoleBtn').textContent = ui.roleRevealed ? 'Hide Role' : 'Show Role';
+
+    const team = $('roleTeam');
+    const mates = role === 'Mafia' ? state.you.teammates : [];
+    team.hidden = mates.length === 0;
+    team.replaceChildren(
+      ...(mates.length
+        ? [el('span', { class: 'muted', text: mates.length === 1 ? 'Your partner' : 'Your partners' }),
+           ...mates.map((m) => playerRow({ name: m.name, alive: true }))]
+        : []));
+  }
+
+  /* ── Screen 4: Night ── */
+  function renderNight() {
+    const me = state.you;
+    const cfg = NIGHT_ACTIONS[me.role];
+
+    let title;
+    let text;
+    if (!me.alive) {
+      title = 'Spectating';
+      text = cfg ? "You can no longer act, but you can watch the night pass." : 'You are out of the game. Watch the night pass.';
+    } else if (!cfg) {
+      title = 'Sleeping...';
+      text = 'You have no night power. Stay quiet until morning.';
+    } else {
+      title = `Night ${state.day}`;
+      text = 'The town is asleep. Make your move before dawn.';
+    }
+    $('nightTitle').textContent = title;
+    $('nightText').textContent = text;
+
+    $('nightActions').hidden = !cfg;
+    if (cfg) renderNightActions(me, cfg);
+  }
+
+  function renderNightActions(me, cfg) {
+    const night = state.night; // null when dead or when no action is available
+    const myTarget = night ? night.myTarget : null;
+    const locked = !!(night && night.locked);
+    const canAct = me.alive && !!night && !locked;
+
+    $('nightActions').style.setProperty('--accent', cfg.accent);
+    $('nightHeading').textContent = cfg.heading;
+    const mates = me.role === 'Mafia' ? me.teammates.map((t) => t.name) : [];
+    $('nightHelp').textContent = cfg.help + (mates.length ? ` Fellow Mafia: ${mates.join(', ')}.` : '');
+
+    const teamPicks = night ? night.teamPicks : [];
+    const rows = state.players.filter((p) => cfg.targets(me, p)).map((p) => {
+      const tags = [];
+      if (p.id === me.id) tags.push(tag('You'));
+      for (const pick of teamPicks.filter((x) => x.targetId === p.id)) {
+        tags.push(tag(pick.mafiaId === me.id ? 'Your pick' : `${nameOf(pick.mafiaId)}'s pick`, 'danger'));
+      }
+      return playerRow(p, {
+        tags,
+        button: pickButton({
+          label: myTarget === p.id ? cfg.done : cfg.verb,
+          pressed: myTarget === p.id,
+          disabled: !canAct,
+          accent: cfg.accent,
+          onClick: () => send('night_action', { targetId: p.id }),
+        }),
+      });
+    });
+    $('nightList').replaceChildren(...rows);
+
+    let status;
+    if (!me.alive) status = "You are dead, so you can't act.";
+    else if (locked) status = `You investigated ${nameOf(myTarget)}. Wait for dawn.`;
+    else if (myTarget) status = `You chose ${nameOf(myTarget)}.${me.role === 'Detective' ? '' : ' You can change your choice until dawn.'}`;
+    else status = 'Pick someone before dawn.';
+    $('nightStatus').textContent = status;
+  }
+
+  /* ── Screen 5: Day / Voting ── */
+  function renderDay() {
+    const me = state.you;
+    const voting = state.phase === 'voting';
+    const v = state.vote || { counts: {}, skip: 0, voted: [], total: 0, myVote: null };
+
+    let text = '';
+    let deadly = false;
+    if (ui.dayEvent && ui.dayEvent.day === state.day) {
+      text = ui.dayEvent.text;
+      deadly = !!ui.dayEvent.killed;
+    } else {
+      text = lastLogText('night_result').replace(/^Day \d+ begins\.\s*/, '');
+      deadly = /was killed by the Mafia/.test(text);
+    }
+    $('dayTitle').textContent = `Day ${state.day}`;
+    $('dayText').textContent = text;
+    $('dayAnnounce').classList.toggle('deadly', deadly);
+
+    $('dayHeading').textContent = voting ? 'Who is the Mafia?' : 'Discussion';
+    $('dayStatus').textContent = voting
+      ? `${v.voted.length} of ${v.total} votes cast. You can change your vote until everyone has voted.`
+      : 'Talk it through. Voting opens when the timer ends or the host starts it.';
+
+    const alive = state.players.filter((p) => p.alive);
+    $('voteList').replaceChildren(...alive.map((p) => {
+      const tags = [];
+      if (p.id === me.id) tags.push(tag('You'));
+      if (voting && v.voted.includes(p.id)) tags.push(tag('Voted', 'ok'));
+      const n = v.counts[p.id] || 0;
+      if (voting && n > 0) tags.push(tag(plural(n, 'vote'), 'votes'));
+      return playerRow(p, {
+        tags,
+        button: pickButton({
+          label: v.myVote === p.id ? 'Voted' : 'Vote',
+          pressed: v.myVote === p.id,
+          disabled: !voting || !me.alive || p.id === me.id,
+          onClick: () => castVote(p.id),
+        }),
+      });
+    }));
+
+    const skip = $('skipVoteBtn');
+    skip.textContent = `Skip Vote${voting && v.skip ? ` (${v.skip})` : ''}`;
+    skip.setAttribute('aria-pressed', String(v.myVote === 'skip'));
+    skip.disabled = !voting || !me.alive;
+
+    $('advanceBtn').hidden = !(me.isHost && state.phase === 'day');
+
+    const out = state.players.filter((p) => !p.alive);
+    $('outCard').hidden = out.length === 0;
+    $('outList').replaceChildren(...out.map((p) => playerRow(p, {
+      sub: causeText(p),
+      tags: [p.role ? roleTag(p.role) : null],
+    })));
+  }
+
+  function causeText(p) {
+    if (p.deathCause === 'mafia') return 'Killed by the Mafia';
+    if (p.deathCause === 'vote') return 'Voted out by the town';
+    if (p.deathCause === 'left') return 'Left the game';
+    return null;
+  }
+
+  function castVote(targetId) {
+    send('cast_vote', { targetId }, (res) => {
+      if (res && res.ok && state && state.vote) {
+        state.vote.myVote = res.targetId === null ? 'skip' : res.targetId;
+        render();
+      }
+    });
+  }
+
+  /* ── Screen 6: Game over ── */
+  function renderOver() {
+    const me = state.you;
+    const mafiaWon = state.winner === 'Mafia';
+    $('verdict').dataset.winner = state.winner || '';
+    $('overTitle').textContent = mafiaWon ? 'The Mafia wins' : 'The Town wins';
+    $('overText').textContent = ui.overText || lastLogText('game_over');
+    const won = (me.role === 'Mafia') === mafiaWon;
+    $('overYou').textContent = me.role ? `You were the ${me.role}. ${won ? 'Your side won.' : 'Your side lost.'}` : '';
+
+    $('overList').replaceChildren(...state.players.map((p) => {
+      const tags = [p.role ? roleTag(p.role) : null];
+      if (p.id === me.id) tags.push(tag('You'));
+      return playerRow(p, { tags, sub: p.alive ? 'Survived' : causeText(p) });
+    }));
+
+    $('returnBtn').disabled = !me.isHost;
+    $('returnHint').hidden = me.isHost;
+  }
+
+  /* ── Shared panels ── */
+  function renderDeadBanner(screen) {
+    $('deadBanner').hidden = !(state && IN_GAME.has(state.phase) && !state.you.alive && screen !== 'role');
+  }
+
+  function renderNotes(screen) {
+    const list = state && state.you.role === 'Detective' ? state.you.investigations : [];
+    const show = !!state && IN_GAME.has(state.phase) && screen !== 'role' && list.length > 0;
+    $('notes').hidden = !show;
+    if (!show) return;
+    $('notesList').replaceChildren(...list.map((n) => el('li', {},
+      `Night ${n.day}: ${n.targetName} is `,
+      el('span', { class: n.result === 'Mafia' ? 'bad' : 'good', text: n.result === 'Mafia' ? 'Mafia' : 'Town' }))));
+  }
+
+  function chatMode(screen) {
+    if (!state || screen === 'role' || screen === 'join') return null;
+    const me = state.you;
+    switch (state.phase) {
+      case 'lobby':
+      case 'ended':
+        return { label: 'Everyone in the room can read this.', enabled: true };
+      case 'night':
+        return me.alive && me.role === 'Mafia'
+          ? { label: 'Mafia chat. Only your team can read this.', enabled: true }
+          : null;
+      default:
+        return me.alive
+          ? { label: 'Town chat. Everyone can read this.', enabled: true }
+          : { label: 'Dead chat. Only eliminated players can read this.', enabled: true };
+    }
+  }
+
+  function renderChat(screen) {
+    const mode = chatMode(screen);
+    $('chat').hidden = !mode;
+    if (!mode) return;
+    $('chatChannel').textContent = mode.label;
+    $('chatInput').disabled = !mode.enabled;
+    $('chatSend').disabled = !mode.enabled;
+  }
+
+  function renderChatMessages() {
+    const log = $('chatLog');
+    if (ui.chat.length === 0) {
+      log.replaceChildren(el('li', { class: 'msg-empty', text: 'No messages yet.' }));
+      return;
+    }
+    log.replaceChildren(...ui.chat.map((m) => el('li', {
+      class: `msg ${m.channel}${state && m.from.id === state.you.id ? ' mine' : ''}`,
+    }, el('span', { class: 'msg-name', text: m.from.name }), el('span', { class: 'msg-text', text: m.text }))));
+    log.scrollTop = log.scrollHeight;
+  }
+
+  /* ══════════════════════════ Countdown ══════════════════════════ */
+
+  function tick() {
+    const t = $('phaseTimer');
+    if (!state || !state.phaseEndsAt) { t.hidden = true; return; }
+    const remain = Math.max(0, Math.ceil((state.phaseEndsAt - (Date.now() + clockOffset)) / 1000));
+    t.hidden = false;
+    t.textContent = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
+    t.classList.toggle('urgent', remain <= 10);
+  }
+  setInterval(tick, 250);
+
+  /* ══════════════════════════ Join / create / leave ══════════════════════════ */
+
+  const nameInput = $('nameInput');
+  const codeInput = $('codeInput');
+
+  function setBusy(value) {
+    busy = value;
+    $('createBtn').disabled = value;
+    $('joinBtn').disabled = value;
+  }
+
+  function readName() {
+    const name = nameInput.value.replace(/\s+/g, ' ').trim();
+    if (name.length < MIN_NAME || name.length > 16) {
+      toast(`Enter a nickname between ${MIN_NAME} and 16 characters.`);
+      nameInput.focus();
+      return null;
+    }
+    remember.set('mafia.name', name);
+    return name;
+  }
+
+  function enteredRoom(res) {
+    store.set('mafia.session', { code: res.code, playerId: res.playerId });
+    updateUrl(res.code);
+  }
+
+  function createRoom() {
+    if (busy) return;
+    const name = readName();
+    if (!name) return;
+    const code = codeInput.value.trim().toUpperCase();
+    if (code && !/^[A-Z0-9]{4}$/.test(code)) { toast('Room codes are exactly 4 letters or digits.'); codeInput.focus(); return; }
+    ui.replaced = false;
+    setBusy(true);
+    send('create_room', { name, code: code || undefined }, (res) => {
+      setBusy(false);
+      if (res && res.ok) enteredRoom(res);
+    });
+  }
+
+  function joinRoom() {
+    if (busy) return;
+    const name = readName();
+    if (!name) return;
+    const code = codeInput.value.trim().toUpperCase();
+    if (!/^[A-Z0-9]{4}$/.test(code)) { toast('Enter the 4-character room code to join.'); codeInput.focus(); return; }
+    ui.replaced = false;
+    const saved = store.get('mafia.session');
+    setBusy(true);
+    send('join_room', { code, name, playerId: saved && saved.code === code ? saved.playerId : undefined }, (res) => {
+      setBusy(false);
+      if (res && res.ok) enteredRoom(res);
+    });
+  }
+
+  function resetToJoinScreen() {
+    store.del('mafia.session');
+    state = null;
+    ui.showRoleCard = false;
+    ui.roleRevealed = false;
+    ui.dayEvent = null;
+    ui.overText = null;
+    ui.chat = [];
+    ui.prevPhase = null;
+    updateUrl(null);
+    codeInput.value = '';
+    $('codeHint').textContent = DEFAULT_HINT;
+    renderChatMessages();
+    render();
+  }
+
+  function leaveRoom() {
+    if (!state) return;
+    if (IN_GAME.has(state.phase) && state.you.alive &&
+        !confirm('Leaving now forfeits the game and eliminates you. Leave anyway?')) return;
+    send('leave_room', {}, (res) => { if (res && res.ok) resetToJoinScreen(); });
+  }
+
+  /** Re-attach to the same seat after a refresh or dropped connection. */
+  function resume() {
+    const saved = store.get('mafia.session');
+    if (!saved || ui.replaced) return;
+    socket.timeout(8000).emit('join_room', { code: saved.code, playerId: saved.playerId }, (err, res) => {
+      if (err) return; // try again on the next connect
+      if (res && res.ok) { updateUrl(res.code); return; }
+      resetToJoinScreen();
+      toast(`Couldn't rejoin your game${res && res.error ? `: ${res.error}` : '.'}`, 'info');
+    });
+  }
+
+  let hintTimer = null;
+  async function checkRoomHint() {
+    const code = codeInput.value.toUpperCase();
+    const hint = $('codeHint');
+    if (!/^[A-Z0-9]{4}$/.test(code)) { hint.textContent = DEFAULT_HINT; return; }
+    try {
+      const res = await fetch(`/api/rooms/${code}`);
+      if (codeInput.value.toUpperCase() !== code) return; // input changed meanwhile
+      if (res.status === 404) {
+        hint.textContent = 'No room has this code yet. Create Room will open one with it.';
+      } else if (res.ok) {
+        const info = await res.json();
+        hint.textContent = info.joinable
+          ? `Room ${code} is open with ${plural(info.players, 'player')}.`
+          : 'That game has already started or is full.';
+      } else {
+        hint.textContent = DEFAULT_HINT;
+      }
+    } catch {
+      hint.textContent = DEFAULT_HINT;
+    }
+  }
+
+  codeInput.addEventListener('input', () => {
+    codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(checkRoomHint, 250);
+  });
+  $('joinForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (codeInput.value.trim().length === 4) joinRoom(); else createRoom();
+  });
+  $('createBtn').addEventListener('click', createRoom);
+  $('joinBtn').addEventListener('click', joinRoom);
+  $('leaveBtn').addEventListener('click', leaveRoom);
+
+  /* ══════════════════════════ In-room controls ══════════════════════════ */
+
+  async function copyInvite() {
+    if (!state) return;
+    const url = `${location.origin}/room/${state.code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Invite link copied.', 'ok');
+    } catch {
+      toast(`Copy this link: ${url}`, 'info');
+    }
+  }
+
+  $('copyLinkBtn').addEventListener('click', copyInvite);
+
+  $('startBtn').addEventListener('click', () => {
+    if (!state) return;
+    const connected = state.players.filter((p) => p.connected).length;
+    if (connected < state.minPlayers) {
+      toast(`Need at least ${state.minPlayers} players to start (${connected} connected).`);
+      return;
+    }
+    send('start_game', {});
+  });
+
+  $('advanceBtn').addEventListener('click', () => send('advance_phase', {}));
+  $('skipVoteBtn').addEventListener('click', () => castVote(null));
+  $('returnBtn').addEventListener('click', () => send('play_again', {}));
+
+  $('roleBtn').addEventListener('click', () => {
+    ui.showRoleCard = !ui.showRoleCard;
+    ui.roleRevealed = false;
+    render();
+  });
+  $('toggleRoleBtn').addEventListener('click', () => {
+    ui.roleRevealed = !ui.roleRevealed;
+    render();
+  });
+  $('roleContinueBtn').addEventListener('click', () => {
+    ui.showRoleCard = false;
+    ui.roleRevealed = false;
+    render();
+  });
+
+  // Hide the role whenever the tab is backgrounded (e.g. locking the phone).
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && ui.roleRevealed) { ui.roleRevealed = false; render(); }
+  });
+
+  $('chatForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = $('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    send('chat_message', { text }, (res) => { if (res && res.ok) input.value = ''; });
+  });
+
+  /* ══════════════════════════ Server events ══════════════════════════ */
+
+  socket.on('connect', () => {
+    $('conn').hidden = true;
+    resume();
+  });
+  socket.on('disconnect', () => { $('conn').hidden = false; });
+  socket.on('connect_error', () => { $('conn').hidden = false; });
+
+  socket.on('room_state', (s) => {
+    clockOffset = s.serverTime - Date.now();
+    if (s.phase === 'lobby' && ui.prevPhase && ui.prevPhase !== 'lobby') {
+      ui.chat = [];
+      ui.dayEvent = null;
+      ui.overText = null;
+      ui.showRoleCard = false;
+      ui.roleRevealed = false;
+      renderChatMessages();
+    }
+    ui.prevPhase = s.phase;
+    state = s;
+    render();
+  });
+
+  socket.on('game_started', () => {
+    ui.showRoleCard = true;
+    ui.roleRevealed = false;
+    ui.dayEvent = null;
+    ui.overText = null;
+    ui.chat = [];
+    renderChatMessages();
+  });
+
+  socket.on('phase_changed', (p) => {
+    clockOffset = p.serverTime - Date.now();
+    // Night keeps the role card open (it opens at game start); any later phase closes it.
+    if (p.phase !== 'night') { ui.showRoleCard = false; ui.roleRevealed = false; }
+  });
+
+  socket.on('day_event', (e) => { ui.dayEvent = e; });
+
+  socket.on('player_eliminated', (e) => {
+    if (!state || e.id !== state.you.id) return;
+    const reasons = {
+      mafia: 'The Mafia killed you during the night.',
+      vote: 'The town voted you out.',
+      left: 'You left the game.',
+    };
+    if (e.cause === 'left') return;
+    showModal({
+      title: 'You have been eliminated',
+      tone: 'mafia',
+      body: [el('p', { text: reasons[e.cause] || 'You are out of the game.' }),
+             el('p', { class: 'muted', text: 'You can keep watching and chat with other dead players.' })],
+      ok: 'Keep Watching',
+    });
+  });
+
+  socket.on('investigation_result', (r) => {
+    const isMafia = r.result === 'Mafia';
+    if (state) {
+      state.you.investigations = [...state.you.investigations,
+        { day: state.day, targetId: r.targetId, targetName: r.targetName, result: r.result }];
+    }
+    showModal({
+      title: 'Investigation result',
+      tone: isMafia ? 'mafia' : 'town',
+      body: [el('p', { class: `modal-big ${isMafia ? 'mafia' : 'town'}` }, `${r.targetName} is ${isMafia ? 'Mafia' : 'Town'}`),
+             el('p', { class: 'muted', text: isMafia ? 'Choose who you tell, and when.' : 'They are not Mafia.' })],
+    });
+    render();
+  });
+
+  socket.on('night_action_confirmed', (e) => {
+    if (!state || !state.night) return;
+    state.night.myTarget = e.targetId;
+    if (e.role === 'Detective') state.night.locked = true;
+    render();
+  });
+
+  socket.on('mafia_picks', (e) => {
+    if (!state || !state.night) return;
+    state.night.teamPicks = e.picks;
+    render();
+  });
+
+  socket.on('vote_update', (v) => {
+    if (!state || state.phase !== 'voting') return;
+    state.vote = { ...(state.vote || {}), counts: v.counts, skip: v.skip, voted: v.voted, total: v.total };
+    render();
+  });
+
+  socket.on('vote_result', (e) => {
+    const body = [el('p', { text: e.text })];
+    if (e.votes.length) {
+      body.push(el('ul', { class: 'list' }, e.votes.map((v) => el('li', { class: 'vote-line' },
+        el('strong', { text: v.voterName }), ' voted ',
+        v.targetName ? el('strong', { text: v.targetName }) : 'to skip'))));
+    }
+    showModal({
+      title: e.eliminated ? 'The town has spoken' : 'No one was eliminated',
+      tone: e.eliminated && e.eliminated.role === 'Mafia' ? 'town' : '',
+      body,
+    });
+  });
+
+  socket.on('game_over', (e) => { ui.overText = e.text; });
+
+  socket.on('chat_message', (m) => {
+    ui.chat.push(m);
+    if (ui.chat.length > 100) ui.chat.shift();
+    renderChatMessages();
+  });
+
+  socket.on('kicked', (e) => {
+    resetToJoinScreen();
+    toast((e && e.reason) || 'You were removed from the room.');
+  });
+
+  socket.on('session_replaced', () => {
+    ui.replaced = true;
+    state = null;
+    render();
+    toast('This game was opened in another tab, so this tab was disconnected from it.', 'info');
+  });
+
+  socket.on('error_message', (e) => toast(e.message));
+
+  /* ══════════════════════════ Boot ══════════════════════════ */
+
+  nameInput.value = remember.get('mafia.name');
+  codeInput.value = codeFromUrl();
+  $('codeHint').textContent = DEFAULT_HINT;
+  if (codeInput.value) checkRoomHint();
+  renderChatMessages();
+  render();
+  (codeInput.value && nameInput.value ? $('joinBtn') : nameInput).focus({ preventScroll: true });
+})();
+</script>
+</body>
+</html>
