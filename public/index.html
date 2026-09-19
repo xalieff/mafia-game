@@ -30,7 +30,7 @@
     --detective: #6EA8F2;
     --town: #D2BE92;
 
-    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
@@ -77,16 +77,35 @@
   }
   main { display: grid; gap: 16px; padding-top: 16px; }
   .screen { display: grid; gap: 16px; }
+  #screen-join { padding-top: 28px; }
   .muted { color: var(--muted); }
   .center { text-align: center; }
   .stack { display: grid; gap: 16px; }
   .lede { color: var(--muted); max-width: 46ch; }
   .hint { color: var(--muted); font-size: 0.875rem; }
 
+  /* ───────────────────────────── Language toggle (fixed, every view) ───────────────────────────── */
+  .lang-toggle {
+    position: fixed; z-index: 20;
+    top: calc(10px + env(safe-area-inset-top));
+    right: calc(12px + env(safe-area-inset-right));
+    display: flex; align-items: center; gap: 2px; padding: 3px;
+    border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  }
+  .lang-btn {
+    min-width: 42px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 999px;
+    background: transparent; color: var(--muted); font-weight: 700; letter-spacing: 0.06em; cursor: pointer;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  .lang-btn:hover { color: var(--text); }
+  .lang-btn[aria-pressed="true"] { background: var(--lamp); color: var(--lamp-ink); }
+  .lang-sep { color: var(--line); user-select: none; }
+
   /* ───────────────────────────── Top bar ───────────────────────────── */
   .topbar {
     position: sticky; top: 0; z-index: 5;
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+    display: grid; gap: 6px;
     margin: 0 -16px;
     padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
     background: var(--bg);
@@ -96,11 +115,15 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     transition: background-color 700ms ease;
   }
-  .topbar-left, .topbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  /* The first row leaves room for the fixed language toggle. */
+  .topbar-left { display: flex; align-items: center; gap: 8px; min-height: 42px; padding-right: 124px; }
+  .topbar-right { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .topbar-actions { display: flex; gap: 8px; }
   .brand { font: 700 1.25rem var(--serif); }
   .room-chip {
-    font: 600 0.875rem var(--mono); letter-spacing: 0.08em;
+    font: 600 0.875rem var(--mono); letter-spacing: 0.06em;
     padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+    overflow-wrap: anywhere;
   }
   .phase-pill {
     display: inline-flex; align-items: baseline; gap: 8px;
@@ -113,6 +136,7 @@
   .conn {
     position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%);
     z-index: 30; padding: 8px 16px; border-radius: 999px; background: var(--mafia); color: #14060A; font-weight: 600;
+    width: max-content; max-width: calc(100vw - 32px); text-align: center;
   }
 
   /* ───────────────────────────── Cards, buttons, fields ───────────────────────────── */
@@ -121,7 +145,7 @@
 
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    min-height: 48px; padding: 0 20px; border-radius: 12px;
+    min-height: 48px; padding: 8px 20px; border-radius: 12px; line-height: 1.2;
     border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
     font-weight: 600; cursor: pointer; text-align: center;
     transition: background-color 150ms ease, transform 100ms ease;
@@ -131,11 +155,12 @@
   .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
   .btn-primary { background: var(--lamp); color: var(--lamp-ink); border-color: transparent; }
   .btn-primary:hover:not([disabled]) { background: #F5D07A; }
-  .btn-sm { min-height: 44px; padding: 0 14px; font-size: 0.95rem; }
-  .btn-xs { min-height: 36px; padding: 0 12px; font-size: 0.85rem; }
+  .btn-sm { min-height: 44px; padding: 6px 12px; font-size: 0.95rem; }
+  .btn-xs { min-height: 36px; padding: 4px 12px; font-size: 0.85rem; }
   .btn-wide { width: 100%; }
   .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .pick { min-width: 108px; }
+  .btn-row .btn { padding-left: 12px; padding-right: 12px; }
+  .pick { min-width: 100px; }
   .pick[aria-pressed="true"] { background: var(--accent, var(--lamp)); color: #10131F; border-color: transparent; }
   .pick[aria-pressed="true"]:hover:not([disabled]) { background: var(--accent, var(--lamp)); }
 
@@ -181,7 +206,6 @@
   .tag.ok { color: var(--doctor); border-color: rgba(76, 199, 172, 0.55); }
   .tag.votes { color: var(--lamp); border-color: rgba(240, 196, 90, 0.5); }
   .tag[data-role] { color: var(--role); border-color: var(--role); }
-  .offline-dot { width: 8px; height: 8px; border-radius: 50%; background: #6F6D8C; display: inline-block; }
 
   /* ───────────────────────────── Lobby ───────────────────────────── */
   .code {
@@ -194,12 +218,12 @@
   .screen-title { font-size: 1.75rem; }
   .role-stage { display: grid; place-items: center; perspective: 1200px; padding: 6px 0 4px; }
   .role-card {
-    position: relative; width: min(78vw, 290px); aspect-ratio: 5 / 7;
+    position: relative; width: min(84vw, 320px); aspect-ratio: 5 / 7;
     transform-style: preserve-3d; transition: transform 650ms cubic-bezier(0.2, 0.7, 0.2, 1);
   }
   .role-card.revealed { transform: rotateY(180deg); }
   .face {
-    position: absolute; inset: 0; border-radius: 22px; padding: 22px;
+    position: absolute; inset: 0; border-radius: 22px; padding: 20px;
     -webkit-backface-visibility: hidden; backface-visibility: hidden;
     display: flex; flex-direction: column; gap: 12px; overflow: auto;
   }
@@ -210,10 +234,11 @@
   }
   .face.back .mark { font: 700 4.5rem/1 var(--serif); color: var(--lamp); }
   .face.front { transform: rotateY(180deg); background: var(--panel); border: 2px solid var(--role, var(--line)); }
-  .face.front h3 { font-size: 2.1rem; color: var(--role, var(--text)); }
-  .face.front .goal { font-size: 0.9rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; margin-top: auto; }
+  .face.front h3 { font-size: clamp(1.6rem, 7vw, 2rem); color: var(--role, var(--text)); overflow-wrap: anywhere; }
+  .face.front p { font-size: 0.95rem; }
+  .face.front .goal { font-size: 0.875rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; margin-top: auto; }
   .team { display: grid; gap: 6px; }
-  .team .row { min-height: 44px; padding: 4px 10px; }
+  .team .row { min-height: 42px; padding: 4px 10px; }
 
   /* ───────────────────────────── Night ───────────────────────────── */
   .hero-card { text-align: center; justify-items: center; padding: 26px 18px; }
@@ -238,7 +263,7 @@
     background: rgba(224, 80, 111, 0.14); border: 1px solid rgba(224, 80, 111, 0.55);
   }
   .dead-banner strong { color: var(--mafia); font-family: var(--serif); font-size: 1.15rem; }
-  .notes li { padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+  .notes li { padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); overflow-wrap: anywhere; }
   .notes .bad { color: var(--mafia); font-weight: 600; }
   .notes .good { color: var(--town); font-weight: 600; }
 
@@ -257,13 +282,13 @@
 
   /* ───────────────────────────── Toasts & modal ───────────────────────────── */
   .toasts {
-    position: fixed; z-index: 40; left: 0; right: 0; top: calc(10px + env(safe-area-inset-top));
+    position: fixed; z-index: 40; left: 0; right: 0; top: calc(60px + env(safe-area-inset-top));
     display: grid; gap: 8px; justify-items: center; padding: 0 16px; pointer-events: none;
   }
   .toast {
     pointer-events: auto; max-width: 520px; width: 100%; padding: 12px 16px; border-radius: 12px;
     background: var(--panel-2); border: 1px solid var(--line); border-left-width: 5px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    animation: toast-in 180ms ease-out;
+    animation: toast-in 180ms ease-out; overflow-wrap: anywhere;
   }
   .toast.error { border-left-color: var(--mafia); }
   .toast.ok { border-left-color: var(--doctor); }
@@ -295,85 +320,94 @@
 </style>
 </head>
 <body data-phase="none">
-<noscript><p style="padding:24px">This game needs JavaScript to run.</p></noscript>
+<noscript><p style="padding:24px">This game needs JavaScript to run. / Для игры нужен JavaScript.</p></noscript>
+
+<!-- Language toggle: fixed in the top corner on every screen -->
+<div class="lang-toggle" id="langToggle" role="group" aria-label="Language" data-i18n-aria="lang.label">
+  <button type="button" class="lang-btn" data-lang="en" lang="en" aria-label="English" aria-pressed="true">EN</button>
+  <span class="lang-sep" aria-hidden="true">|</span>
+  <button type="button" class="lang-btn" data-lang="ru" lang="ru" aria-label="Русский" aria-pressed="false">RU</button>
+</div>
 
 <div class="app">
   <!-- Top bar (only while in a room) -->
   <header class="topbar" id="topbar" hidden>
     <div class="topbar-left">
-      <span class="brand">Mafia</span>
+      <span class="brand" data-i18n="app.title">Mafia</span>
       <span class="room-chip" id="roomChip"></span>
     </div>
     <div class="topbar-right">
       <div class="phase-pill"><span id="phaseLabel"></span><time id="phaseTimer" hidden></time></div>
-      <button class="btn btn-xs" id="roleBtn" type="button" hidden>My Role</button>
-      <button class="btn btn-xs" id="leaveBtn" type="button">Leave</button>
+      <div class="topbar-actions">
+        <button class="btn btn-xs" id="roleBtn" type="button" hidden>My Role</button>
+        <button class="btn btn-xs" id="leaveBtn" type="button" data-i18n="btn.leave">Leave</button>
+      </div>
     </div>
   </header>
 
   <main>
     <div class="dead-banner" id="deadBanner" role="status" hidden>
-      <strong>You are dead. Spectating.</strong>
-      <span class="muted">You can watch and chat with other dead players, but you can't act or vote.</span>
+      <strong data-i18n="dead.title">You are dead. Spectating.</strong>
+      <span class="muted" data-i18n="dead.text">You can watch and chat with other dead players, but you can't act or vote.</span>
     </div>
 
     <!-- Screen 1: Join / Create -->
     <section class="screen" id="screen-join" aria-labelledby="joinTitle">
-      <h1 class="hero" id="joinTitle">Mafia</h1>
-      <p class="lede">A party game of secret roles and quiet suspicion. Everyone plays from their own phone, and nobody needs an account.</p>
+      <h1 class="hero" id="joinTitle" data-i18n="app.title">Mafia</h1>
+      <p class="lede" data-i18n="join.lede">A party game of secret roles and quiet suspicion. Everyone plays from their own phone, and nobody needs an account.</p>
       <form class="card" id="joinForm" autocomplete="off" novalidate>
         <div class="field">
-          <label for="nameInput">Nickname</label>
-          <input type="text" id="nameInput" maxlength="16" autocomplete="nickname" autocapitalize="words" spellcheck="false" placeholder="What should we call you?">
+          <label for="nameInput" data-i18n="join.nickname">Nickname</label>
+          <input type="text" id="nameInput" maxlength="16" autocomplete="nickname" autocapitalize="words" spellcheck="false" placeholder="What should we call you?" data-i18n-placeholder="join.nicknamePh">
         </div>
         <div class="field">
-          <label for="codeInput">Room code</label>
+          <label for="codeInput" data-i18n="join.code">Room code</label>
           <input type="text" id="codeInput" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD" aria-describedby="codeHint">
           <p class="hint" id="codeHint"></p>
         </div>
         <div class="btn-row">
-          <button class="btn btn-primary" type="button" id="createBtn">Create Room</button>
-          <button class="btn" type="button" id="joinBtn">Join Room</button>
+          <button class="btn btn-primary" type="button" id="createBtn" data-i18n="join.create">Create Room</button>
+          <button class="btn" type="button" id="joinBtn" data-i18n="join.join">Join Room</button>
         </div>
       </form>
       <details class="card rules">
-        <summary>How to play</summary>
+        <summary data-i18n="rules.title">How to play</summary>
         <ul>
-          <li>Needs <strong>4 to 15 players</strong>. Everyone gets a secret role.</li>
-          <li><strong>Mafia</strong> pick someone to eliminate each night. <strong>Doctor</strong> protects one person. <strong>Detective</strong> checks whether someone is Mafia.</li>
-          <li>Each morning, the town learns who died, talks it through, then votes someone out.</li>
-          <li><strong>Town wins</strong> when all the Mafia are gone. <strong>Mafia wins</strong> when they equal or outnumber the Town.</li>
+          <li data-i18n-rich="rules.1"></li>
+          <li data-i18n-rich="rules.2"></li>
+          <li data-i18n-rich="rules.3"></li>
+          <li data-i18n-rich="rules.4"></li>
         </ul>
       </details>
     </section>
 
     <!-- Screen 2: Lobby -->
-    <section class="screen" id="screen-lobby" aria-label="Lobby" hidden>
+    <section class="screen" id="screen-lobby" aria-label="Lobby" data-i18n-aria="aria.lobby" hidden>
       <div class="card center">
         <div class="code" id="lobbyCode" role="text"></div>
-        <p class="muted">Share this room code, or send the invite link.</p>
-        <button class="btn" type="button" id="copyLinkBtn">Copy Invite Link</button>
+        <p class="muted" data-i18n="lobby.share">Share this room code, or send the invite link.</p>
+        <button class="btn" type="button" id="copyLinkBtn" data-i18n="lobby.copy">Copy Invite Link</button>
       </div>
       <div class="card">
-        <h3 id="lobbyCount">Players</h3>
+        <h3 id="lobbyCount"></h3>
         <ul class="list" id="lobbyList"></ul>
       </div>
       <div id="hostControls" class="stack" hidden>
-        <button class="btn btn-primary btn-wide" type="button" id="startBtn">Start Game</button>
+        <button class="btn btn-primary btn-wide" type="button" id="startBtn" data-i18n="lobby.start">Start Game</button>
         <p class="hint center" id="startHint"></p>
       </div>
-      <p class="muted center" id="guestWait" hidden>Waiting for the host to start the game.</p>
+      <p class="muted center" id="guestWait" data-i18n="lobby.guestWait" hidden>Waiting for the host to start the game.</p>
     </section>
 
     <!-- Screen 3: Role card -->
-    <section class="screen" id="screen-role" aria-label="Your role" hidden>
-      <h2 class="screen-title">Your role</h2>
-      <p class="lede">Only you should see this. Anyone nearby can read your screen, so hide your role when you're done.</p>
+    <section class="screen" id="screen-role" aria-label="Your role" data-i18n-aria="aria.role" hidden>
+      <h2 class="screen-title" data-i18n="role.title">Your role</h2>
+      <p class="lede" data-i18n="role.lede">Only you should see this. Anyone nearby can read your screen, so hide your role when you're done.</p>
       <div class="role-stage">
         <div class="role-card" id="roleCard" data-role="">
           <div class="face back" id="roleBack">
             <span class="mark" aria-hidden="true">?</span>
-            <p class="muted">Role hidden</p>
+            <p class="muted" data-i18n="role.hidden">Role hidden</p>
           </div>
           <div class="face front" id="roleFront" aria-hidden="true">
             <h3 id="roleName"></h3>
@@ -385,12 +419,12 @@
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" type="button" id="toggleRoleBtn">Show Role</button>
-        <button class="btn" type="button" id="roleContinueBtn">Continue</button>
+        <button class="btn" type="button" id="roleContinueBtn" data-i18n="role.continue">Continue</button>
       </div>
     </section>
 
     <!-- Screen 4: Night -->
-    <section class="screen" id="screen-night" aria-label="Night phase" hidden>
+    <section class="screen" id="screen-night" aria-label="Night phase" data-i18n-aria="aria.night" hidden>
       <div class="card hero-card">
         <svg class="moon" viewBox="0 0 64 64" aria-hidden="true">
           <defs><mask id="moonMask"><rect width="64" height="64" fill="#fff"/><circle cx="43" cy="26" r="20" fill="#000"/></mask></defs>
@@ -408,7 +442,7 @@
     </section>
 
     <!-- Screen 5: Day / Voting -->
-    <section class="screen" id="screen-day" aria-label="Day phase" hidden>
+    <section class="screen" id="screen-day" aria-label="Day phase" data-i18n-aria="aria.day" hidden>
       <div class="card announce" id="dayAnnounce">
         <h2 id="dayTitle"></h2>
         <p id="dayText" aria-live="polite"></p>
@@ -418,50 +452,50 @@
         <p class="muted" id="dayStatus"></p>
         <ul class="list" id="voteList"></ul>
         <button class="btn btn-wide pick" type="button" id="skipVoteBtn" style="--accent: var(--detective)"></button>
-        <button class="btn btn-primary btn-wide" type="button" id="advanceBtn" hidden>Start Voting Now</button>
+        <button class="btn btn-primary btn-wide" type="button" id="advanceBtn" data-i18n="day.advance" hidden>Start Voting Now</button>
       </div>
       <div class="card" id="outCard" hidden>
-        <h3>Out of the game</h3>
+        <h3 data-i18n="out.title">Out of the game</h3>
         <ul class="list" id="outList"></ul>
       </div>
     </section>
 
     <!-- Screen 6: Game over -->
-    <section class="screen" id="screen-over" aria-label="Game over" hidden>
+    <section class="screen" id="screen-over" aria-label="Game over" data-i18n-aria="aria.over" hidden>
       <div class="card verdict" id="verdict" data-winner="">
         <h2 id="overTitle"></h2>
         <p id="overText"></p>
         <p class="muted" id="overYou"></p>
       </div>
       <div class="card">
-        <h3>Final roles</h3>
+        <h3 data-i18n="over.final">Final roles</h3>
         <ul class="list" id="overList"></ul>
       </div>
-      <button class="btn btn-primary btn-wide" type="button" id="returnBtn">Return to Lobby</button>
-      <p class="hint center" id="returnHint" hidden>Only the host can return everyone to the lobby.</p>
+      <button class="btn btn-primary btn-wide" type="button" id="returnBtn" data-i18n="over.return">Return to Lobby</button>
+      <p class="hint center" id="returnHint" data-i18n="over.returnHint" hidden>Only the host can return everyone to the lobby.</p>
     </section>
 
     <!-- Detective notes (shared across night/day) -->
     <section class="card notes" id="notes" hidden>
-      <h3>Investigation notes</h3>
+      <h3 data-i18n="notes.title">Investigation notes</h3>
       <ul class="list" id="notesList"></ul>
     </section>
 
     <!-- Chat (shared) -->
-    <section class="card" id="chat" aria-label="Chat" hidden>
-      <h3>Chat</h3>
+    <section class="card" id="chat" aria-label="Chat" data-i18n-aria="chat.title" hidden>
+      <h3 data-i18n="chat.title">Chat</h3>
       <p class="chat-channel" id="chatChannel"></p>
       <ul class="chat-log" id="chatLog" aria-live="polite"></ul>
       <form class="chat-form" id="chatForm" autocomplete="off">
-        <input type="text" id="chatInput" maxlength="300" placeholder="Type a message" aria-label="Chat message">
-        <button class="btn btn-sm" type="submit" id="chatSend">Send</button>
+        <input type="text" id="chatInput" maxlength="300" placeholder="Type a message" data-i18n-placeholder="chat.placeholder" aria-label="Chat message" data-i18n-aria="chat.aria">
+        <button class="btn btn-sm" type="submit" id="chatSend" data-i18n="chat.send">Send</button>
       </form>
     </section>
   </main>
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<div class="conn" id="conn" role="status" hidden>Connection lost. Reconnecting...</div>
+<div class="conn" id="conn" role="status" data-i18n="conn.lost" hidden>Connection lost. Reconnecting...</div>
 
 <dialog class="modal" id="modal" aria-labelledby="modalTitle">
   <div class="modal-body">
@@ -475,6 +509,460 @@
 <script>
 (() => {
   'use strict';
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Translations
+     ─ Keys with an object value are plural forms (see tp()).
+     ─ `**bold**` inside a string is rendered as <strong> (see richInto()).
+     ─ `srv.*` keys exist only in Russian: the server always sends English
+       error strings, which are matched and translated in translateServerError().
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const I18N = {
+    en: {
+      'app.title': 'Mafia',
+      'lang.label': 'Language',
+      'conn.lost': 'Connection lost. Reconnecting...',
+      'modal.ok': 'OK',
+
+      'aria.lobby': 'Lobby',
+      'aria.role': 'Your role',
+      'aria.night': 'Night phase',
+      'aria.day': 'Day phase',
+      'aria.over': 'Game over',
+
+      'join.lede': 'A party game of secret roles and quiet suspicion. Everyone plays from their own phone, and nobody needs an account.',
+      'join.nickname': 'Nickname',
+      'join.nicknamePh': 'What should we call you?',
+      'join.code': 'Room code',
+      'join.create': 'Create Room',
+      'join.join': 'Join Room',
+      'hint.default': 'Joining a friend? Enter their 4-character code. Creating? Leave it empty for a random code, or choose your own.',
+      'hint.noRoom': 'No room has this code yet. Create Room will open one with it.',
+      'hint.open': 'Room {code} is open with {players}.',
+      'hint.closed': 'That game has already started or is full.',
+      'rules.title': 'How to play',
+      'rules.1': 'Needs **4 to 15 players**. Everyone gets a secret role.',
+      'rules.2': '**Mafia** pick someone to eliminate each night. **Doctor** protects one person. **Detective** checks whether someone is Mafia.',
+      'rules.3': 'Each morning, the town learns who died, talks it through, then votes someone out.',
+      'rules.4': '**Town wins** when all the Mafia are gone. **Mafia wins** when they equal or outnumber the Town.',
+
+      'plural.players': { one: '{n} player', other: '{n} players' },
+      'plural.votes': { one: '{n} vote', other: '{n} votes' },
+
+      'tag.host': 'Host',
+      'tag.you': 'You',
+      'tag.offline': 'Offline',
+
+      'lobby.share': 'Share this room code, or send the invite link.',
+      'lobby.copy': 'Copy Invite Link',
+      'lobby.count': 'Players ({n} of {max})',
+      'lobby.start': 'Start Game',
+      'lobby.guestWait': 'Waiting for the host to start the game.',
+      'lobby.hintWaiting': 'Waiting for players... Need at least {min} to start. Connected: {n}.',
+      'lobby.hintReady': 'Connected: {n}. Start when everyone is in.',
+      'lobby.remove': 'Remove',
+      'lobby.removeAria': 'Remove {name}',
+
+      'room.chip': 'Room {code}',
+      'phase.lobby': 'Lobby',
+      'phase.night': 'Night {n}',
+      'phase.day': 'Day {n}',
+      'phase.voting': 'Vote, day {n}',
+      'phase.ended': 'Game over',
+      'btn.role': 'My Role',
+      'btn.backToGame': 'Back to Game',
+      'btn.leave': 'Leave',
+
+      'role.title': 'Your role',
+      'role.lede': "Only you should see this. Anyone nearby can read your screen, so hide your role when you're done.",
+      'role.hidden': 'Role hidden',
+      'role.show': 'Show Role',
+      'role.hide': 'Hide Role',
+      'role.continue': 'Continue',
+      'role.partner': 'Your partner',
+      'role.partners': 'Your partners',
+      'role.Mafia': 'Mafia',
+      'role.Doctor': 'Doctor',
+      'role.Detective': 'Detective',
+      'role.Townsperson': 'Townsperson',
+      'role.desc.Mafia': 'Each night, you and your team choose one person to eliminate. By day, blend in and stay out of suspicion.',
+      'role.desc.Doctor': 'Each night, choose one person to protect. If the Mafia target them, they survive. You may protect yourself.',
+      'role.desc.Detective': 'Each night, investigate one person to learn whether they are Mafia. Use what you learn carefully.',
+      'role.desc.Townsperson': 'You have no night power. Watch, listen, and use your vote to find the Mafia.',
+      'role.goal.Mafia': 'You win when the Mafia equal or outnumber the Town.',
+      'role.goal.Town': 'You win when every Mafia member is eliminated.',
+
+      'night.title': 'Night {n}',
+      'night.text': 'Night has fallen. The town is asleep. Make your move before dawn.',
+      'night.sleepTitle': 'Sleeping...',
+      'night.sleepText': 'Night has fallen. You have no night power. Stay quiet until morning.',
+      'night.specTitle': 'Spectating',
+      'night.specTextAct': 'Night has fallen. You can no longer act, but you can watch the night pass.',
+      'night.specText': 'Night has fallen. You are out of the game. Watch the night pass.',
+      'night.mates': ' Fellow Mafia: {names}.',
+      'night.pickYours': 'Your pick',
+      'night.pickOf': "{name}'s pick",
+      'night.killed': 'Dawn breaks. {name} was killed by the Mafia during the night. They were the {role}.',
+      'night.peaceful': 'Dawn breaks and, remarkably, no one died last night.',
+
+      'act.Mafia.heading': 'Choose someone to eliminate',
+      'act.Mafia.help': 'Your team decides by most picks. If you split, one of the top picks is chosen at random.',
+      'act.Mafia.verb': 'Eliminate',
+      'act.Mafia.done': 'Targeted',
+      'act.Doctor.heading': 'Choose someone to protect',
+      'act.Doctor.help': 'If the Mafia target your patient, they survive the night. You may protect yourself.',
+      'act.Doctor.verb': 'Protect',
+      'act.Doctor.done': 'Protected',
+      'act.Detective.heading': 'Choose someone to investigate',
+      'act.Detective.help': 'You learn whether they are Mafia. You can investigate one person each night.',
+      'act.Detective.verb': 'Investigate',
+      'act.Detective.done': 'Investigated',
+
+      'status.dead': "You are dead, so you can't act.",
+      'status.locked': 'You investigated {name}. Wait for dawn.',
+      'status.chose': 'You chose {name}.',
+      'status.change': ' You can change your choice until dawn.',
+      'status.pick': 'Pick someone before dawn.',
+
+      'day.title': 'Day {n}',
+      'day.discussion': 'Discussion',
+      'day.whoMafia': 'Who is the Mafia?',
+      'day.statusVoting': '{voted} of {total} votes cast. You can change your vote until everyone has voted.',
+      'day.statusDiscussion': 'Talk it through. Voting opens when the timer ends or the host starts it.',
+      'day.advance': 'Start Voting Now',
+      'vote.cast': 'Vote',
+      'vote.voted': 'Voted',
+      'vote.skip': 'Skip Vote',
+      'vote.for': ' voted for ',
+      'vote.skipped': ' skipped the vote',
+      'out.title': 'Out of the game',
+      'cause.mafia': 'Killed by the Mafia',
+      'cause.vote': 'Voted out by the town',
+      'cause.left': 'Left the game',
+      'cause.survived': 'Survived',
+
+      'voteRes.eliminated': 'The town has spoken',
+      'voteRes.none': 'No one was eliminated',
+      'voteRes.majority': '{name} was voted out by the town. They were the {role}.',
+      'voteRes.tie': 'The vote ended in a tie. No one was eliminated.',
+      'voteRes.skip': 'The town chose not to eliminate anyone.',
+      'voteRes.noVotes': 'No votes were cast. No one was eliminated.',
+
+      'elim.title': 'You have been eliminated',
+      'elim.mafia': 'The Mafia killed you during the night.',
+      'elim.vote': 'The town voted you out.',
+      'elim.default': 'You are out of the game.',
+      'elim.note': 'You can keep watching and chat with other dead players.',
+      'elim.keep': 'Keep Watching',
+
+      'inv.title': 'Investigation result',
+      'inv.mafia': '{name} is Mafia',
+      'inv.town': '{name} is Town',
+      'inv.subMafia': 'Choose who you tell, and when.',
+      'inv.subTown': 'They are not Mafia.',
+      'notes.title': 'Investigation notes',
+      'notes.prefix': 'Night {n}: {name} is ',
+      'res.mafia': 'Mafia',
+      'res.town': 'Town',
+
+      'over.mafiaWins': 'The Mafia wins',
+      'over.townWins': 'The Town wins',
+      'over.textMafia': 'The Mafia now outnumber or equal the Town. The Mafia wins!',
+      'over.textTown': 'All the Mafia have been eliminated. The Town wins!',
+      'over.youWon': 'You were the {role}. Your side won.',
+      'over.youLost': 'You were the {role}. Your side lost.',
+      'over.final': 'Final roles',
+      'over.return': 'Return to Lobby',
+      'over.returnHint': 'Only the host can return everyone to the lobby.',
+
+      'dead.title': 'You are dead. Spectating.',
+      'dead.text': "You can watch and chat with other dead players, but you can't act or vote.",
+
+      'chat.title': 'Chat',
+      'chat.placeholder': 'Type a message',
+      'chat.aria': 'Chat message',
+      'chat.send': 'Send',
+      'chat.empty': 'No messages yet.',
+      'chat.room': 'Everyone in the room can read this.',
+      'chat.mafia': 'Mafia chat. Only your team can read this.',
+      'chat.town': 'Town chat. Everyone can read this.',
+      'chat.dead': 'Dead chat. Only eliminated players can read this.',
+
+      'err.notConnected': 'Not connected to the server yet. Trying to reconnect...',
+      'err.timeout': 'The server took too long to respond. Try again.',
+      'err.generic': 'Something went wrong.',
+      'err.nickname': 'Enter a nickname between {min} and {max} characters.',
+      'err.codeFormat': 'Room codes are exactly 4 letters or digits.',
+      'err.codeNeeded': 'Enter the 4-character room code to join.',
+      'err.needPlayers': 'Need at least {min} players to start ({n} connected).',
+      'toast.linkCopied': 'Invite link copied.',
+      'toast.copyManual': 'Copy this link: {url}',
+      'toast.rejoinFail': "Couldn't rejoin your game.",
+      'toast.rejoinFailWhy': "Couldn't rejoin your game: {reason}",
+      'toast.kicked': 'The host removed you from the room.',
+      'toast.replaced': 'This game was opened in another tab, so this tab was disconnected from it.',
+      'confirm.leave': 'Leaving now forfeits the game and eliminates you. Leave anyway?',
+    },
+
+    ru: {
+      'app.title': 'Мафия',
+      'lang.label': 'Язык',
+      'conn.lost': 'Соединение потеряно. Переподключаемся...',
+      'modal.ok': 'OK',
+
+      'aria.lobby': 'Лобби',
+      'aria.role': 'Ваша роль',
+      'aria.night': 'Ночная фаза',
+      'aria.day': 'Дневная фаза',
+      'aria.over': 'Игра окончена',
+
+      'join.lede': 'Игра для компании: тайные роли, подозрения и тихие интриги. Каждый играет со своего телефона, регистрация не нужна.',
+      'join.nickname': 'Никнейм',
+      'join.nicknamePh': 'Как вас называть?',
+      'join.code': 'Код комнаты',
+      'join.create': 'Создать комнату',
+      'join.join': 'Войти в комнату',
+      'hint.default': 'Заходите к друзьям? Введите их код из 4 символов. Создаёте комнату? Оставьте поле пустым для случайного кода или придумайте свой.',
+      'hint.noRoom': 'Комнаты с таким кодом пока нет. Кнопка «Создать комнату» откроет комнату с этим кодом.',
+      'hint.open': 'Комната {code} открыта: {players}.',
+      'hint.closed': 'Игра уже началась или комната заполнена.',
+      'rules.title': 'Как играть',
+      'rules.1': 'Нужно **от 4 до 15 игроков**. Каждому достаётся тайная роль.',
+      'rules.2': '**Мафия** каждую ночь выбирает жертву. **Доктор** защищает одного игрока. **Детектив** проверяет, мафия ли игрок.',
+      'rules.3': 'Каждое утро город узнаёт, кто погиб, обсуждает случившееся и голосованием исключает подозреваемого.',
+      'rules.4': '**Мирные жители побеждают**, когда вся мафия устранена. **Мафия побеждает**, когда её не меньше, чем мирных жителей.',
+
+      'plural.players': { one: '{n} игрок', few: '{n} игрока', many: '{n} игроков', other: '{n} игрока' },
+      'plural.votes': { one: '{n} голос', few: '{n} голоса', many: '{n} голосов', other: '{n} голоса' },
+
+      'tag.host': 'Хост',
+      'tag.you': 'Вы',
+      'tag.offline': 'Не в сети',
+
+      'lobby.share': 'Поделитесь кодом комнаты или отправьте ссылку-приглашение.',
+      'lobby.copy': 'Скопировать ссылку',
+      'lobby.count': 'Игроки ({n} из {max})',
+      'lobby.start': 'Начать игру',
+      'lobby.guestWait': 'Ждём, пока хост начнёт игру.',
+      'lobby.hintWaiting': 'Ждём игроков... Для старта нужно не меньше {min}. Подключено: {n}.',
+      'lobby.hintReady': 'Подключено: {n}. Начинайте, когда все будут на месте.',
+      'lobby.remove': 'Убрать',
+      'lobby.removeAria': 'Убрать игрока {name}',
+
+      'room.chip': 'Комната {code}',
+      'phase.lobby': 'Лобби',
+      'phase.night': 'Ночь {n}',
+      'phase.day': 'День {n}',
+      'phase.voting': 'Голосование, день {n}',
+      'phase.ended': 'Игра окончена',
+      'btn.role': 'Моя роль',
+      'btn.backToGame': 'Назад в игру',
+      'btn.leave': 'Выйти',
+
+      'role.title': 'Ваша роль',
+      'role.lede': 'Это должны видеть только вы. Соседи могут заглянуть в ваш экран, поэтому скройте роль, когда закончите.',
+      'role.hidden': 'Роль скрыта',
+      'role.show': 'Показать роль',
+      'role.hide': 'Скрыть роль',
+      'role.continue': 'Продолжить',
+      'role.partner': 'Ваш напарник',
+      'role.partners': 'Ваши напарники',
+      'role.Mafia': 'Мафия',
+      'role.Doctor': 'Доктор',
+      'role.Detective': 'Детектив',
+      'role.Townsperson': 'Мирный житель',
+      'role.desc.Mafia': 'Каждую ночь вы вместе с командой выбираете, кого убрать. Днём держитесь как все и не вызывайте подозрений.',
+      'role.desc.Doctor': 'Каждую ночь выбирайте, кого защитить. Если мафия нацелится на этого игрока, он выживет. Можно защитить и себя.',
+      'role.desc.Detective': 'Каждую ночь проверяйте одного игрока и узнавайте, мафия он или нет. Распоряжайтесь этой информацией осторожно.',
+      'role.desc.Townsperson': 'У вас нет ночных способностей. Наблюдайте, слушайте и голосуйте, чтобы вычислить мафию.',
+      'role.goal.Mafia': 'Вы побеждаете, когда мафии становится не меньше, чем мирных жителей.',
+      'role.goal.Town': 'Вы побеждаете, когда вся мафия устранена.',
+
+      'night.title': 'Ночь {n}',
+      'night.text': 'Наступила ночь. Город спит. Сделайте свой ход до рассвета.',
+      'night.sleepTitle': 'Вы спите...',
+      'night.sleepText': 'Наступила ночь. У вас нет ночных способностей. Молчите до утра.',
+      'night.specTitle': 'Вы наблюдаете',
+      'night.specTextAct': 'Наступила ночь. Вы больше не можете действовать, но можете наблюдать за ночью.',
+      'night.specText': 'Наступила ночь. Вы выбыли из игры. Наблюдайте за ночью.',
+      'night.mates': ' Ваши напарники: {names}.',
+      'night.pickYours': 'Ваш выбор',
+      'night.pickOf': 'Выбор: {name}',
+      'night.killed': 'Наступает утро. Этой ночью мафия убила игрока {name}. Роль: {role}.',
+      'night.peaceful': 'Наступает утро, и, как ни странно, этой ночью никто не погиб.',
+
+      'act.Mafia.heading': 'Выберите жертву',
+      'act.Mafia.help': 'Команда решает большинством выборов. При ничьей цель выбирается случайно среди лидеров.',
+      'act.Mafia.verb': 'Убить',
+      'act.Mafia.done': 'Выбран',
+      'act.Doctor.heading': 'Выберите, кого защитить',
+      'act.Doctor.help': 'Если мафия нацелится на вашего пациента, он переживёт ночь. Можно защитить себя.',
+      'act.Doctor.verb': 'Защитить',
+      'act.Doctor.done': 'Защищён',
+      'act.Detective.heading': 'Выберите, кого проверить',
+      'act.Detective.help': 'Вы узнаете, мафия ли этот игрок. За ночь можно проверить только одного.',
+      'act.Detective.verb': 'Проверить',
+      'act.Detective.done': 'Проверен',
+
+      'status.dead': 'Вы выбыли и не можете действовать.',
+      'status.locked': 'Вы проверили игрока {name}. Ждите рассвета.',
+      'status.chose': 'Вы выбрали: {name}.',
+      'status.change': ' Выбор можно изменить до рассвета.',
+      'status.pick': 'Сделайте выбор до рассвета.',
+
+      'day.title': 'День {n}',
+      'day.discussion': 'Обсуждение',
+      'day.whoMafia': 'Кто из вас мафия?',
+      'day.statusVoting': 'Проголосовали: {voted} из {total}. Голос можно изменить, пока не проголосуют все.',
+      'day.statusDiscussion': 'Обсудите случившееся. Голосование начнётся по таймеру или когда его запустит хост.',
+      'day.advance': 'Начать голосование',
+      'vote.cast': 'Голосовать',
+      'vote.voted': 'Голос отдан',
+      'vote.skip': 'Пропустить голосование',
+      'vote.for': ' — за ',
+      'vote.skipped': ' — пропуск',
+      'out.title': 'Выбыли из игры',
+      'cause.mafia': 'Жертва мафии',
+      'cause.vote': 'Исключение голосованием',
+      'cause.left': 'Выход из игры',
+      'cause.survived': 'Остаётся в игре',
+
+      'voteRes.eliminated': 'Город принял решение',
+      'voteRes.none': 'Никто не исключён',
+      'voteRes.majority': 'Город исключил игрока {name}. Роль: {role}.',
+      'voteRes.tie': 'Голоса разделились поровну. Никто не исключён.',
+      'voteRes.skip': 'Город решил никого не исключать.',
+      'voteRes.noVotes': 'Никто не проголосовал. Никто не исключён.',
+
+      'elim.title': 'Вы выбыли из игры',
+      'elim.mafia': 'Мафия убила вас этой ночью.',
+      'elim.vote': 'Город исключил вас голосованием.',
+      'elim.default': 'Вы выбыли из игры.',
+      'elim.note': 'Можно продолжать наблюдать и общаться с другими выбывшими.',
+      'elim.keep': 'Продолжить наблюдение',
+
+      'inv.title': 'Результат проверки',
+      'inv.mafia': '{name} — мафия',
+      'inv.town': '{name} — мирный житель',
+      'inv.subMafia': 'Решайте, кому и когда об этом рассказать.',
+      'inv.subTown': 'Этот игрок не мафия.',
+      'notes.title': 'Записи детектива',
+      'notes.prefix': 'Ночь {n}: {name} — ',
+      'res.mafia': 'мафия',
+      'res.town': 'мирный житель',
+
+      'over.mafiaWins': 'Побеждает мафия',
+      'over.townWins': 'Побеждают мирные жители',
+      'over.textMafia': 'Мафия сравнялась с мирными жителями по числу или превзошла их. Мафия победила!',
+      'over.textTown': 'Вся мафия устранена. Мирные жители победили!',
+      'over.youWon': 'Ваша роль: {role}. Ваша сторона победила.',
+      'over.youLost': 'Ваша роль: {role}. Ваша сторона проиграла.',
+      'over.final': 'Роли игроков',
+      'over.return': 'Вернуться в лобби',
+      'over.returnHint': 'Вернуть всех в лобби может только хост.',
+
+      'dead.title': 'Вы выбыли. Режим наблюдателя.',
+      'dead.text': 'Вы можете наблюдать и общаться с другими выбывшими, но не можете действовать и голосовать.',
+
+      'chat.title': 'Чат',
+      'chat.placeholder': 'Введите сообщение',
+      'chat.aria': 'Сообщение в чат',
+      'chat.send': 'Отправить',
+      'chat.empty': 'Сообщений пока нет.',
+      'chat.room': 'Это видят все в комнате.',
+      'chat.mafia': 'Чат мафии. Его видит только ваша команда.',
+      'chat.town': 'Общий чат. Его видят все.',
+      'chat.dead': 'Чат выбывших. Его видят только выбывшие игроки.',
+
+      'err.notConnected': 'Нет соединения с сервером. Пробуем переподключиться...',
+      'err.timeout': 'Сервер долго не отвечает. Попробуйте ещё раз.',
+      'err.generic': 'Что-то пошло не так.',
+      'err.nickname': 'Введите никнейм от {min} до {max} символов.',
+      'err.codeFormat': 'Код комнаты — ровно 4 буквы или цифры.',
+      'err.codeNeeded': 'Введите код комнаты из 4 символов, чтобы войти.',
+      'err.needPlayers': 'Для старта нужно не меньше {min} игроков (подключено: {n}).',
+      'toast.linkCopied': 'Ссылка-приглашение скопирована.',
+      'toast.copyManual': 'Скопируйте ссылку: {url}',
+      'toast.rejoinFail': 'Не удалось вернуться в игру.',
+      'toast.rejoinFailWhy': 'Не удалось вернуться в игру: {reason}',
+      'toast.kicked': 'Хост удалил вас из комнаты.',
+      'toast.replaced': 'Игра открыта в другой вкладке, поэтому эта вкладка отключена.',
+      'confirm.leave': 'Если выйти сейчас, вы будете исключены из игры. Всё равно выйти?',
+
+      /* Server error messages (the server always sends these in English). */
+      'srv.codeFormat': 'Код комнаты — ровно 4 буквы или цифры.',
+      'srv.noFreeCode': 'Не удалось создать свободный код комнаты. Попробуйте ещё раз.',
+      'srv.nameRequired': 'Нужно указать имя игрока.',
+      'srv.nameShort': 'Имя должно содержать не менее {n} символов.',
+      'srv.msgNotText': 'Сообщение должно быть текстом.',
+      'srv.msgEmpty': 'Сообщение пустое.',
+      'srv.noChatNight': 'Ночью писать в чат нельзя.',
+      'srv.alreadyInRoom': 'Вы уже в комнате. Сначала выйдите из неё.',
+      'srv.codeTaken': 'Этот код комнаты уже занят.',
+      'srv.roomNotFound': 'Комната не найдена.',
+      'srv.leftGame': 'Вы вышли из этой игры и не можете вернуться.',
+      'srv.started': 'Игра уже началась.',
+      'srv.roomFull': 'Комната заполнена.',
+      'srv.nameTaken': 'Это имя уже занято в комнате.',
+      'srv.needPlayers': 'Для старта нужно не меньше {n} подключённых игроков.',
+      'srv.notInRoom': 'Вы не в комнате.',
+      'srv.hostOnly': 'Это может сделать только хост.',
+      'srv.notLiving': 'Выбранный игрок уже выбыл из игры.',
+      'srv.kickLobbyOnly': 'Удалять игроков можно только в лобби.',
+      'srv.playerNotFound': 'Игрок не найден.',
+      'srv.kickSelf': 'Нельзя удалить самого себя.',
+      'srv.notNight': 'Сейчас не ночь.',
+      'srv.deadCantAct': 'Выбывшие игроки не могут действовать.',
+      'srv.noNightAction': 'У вас нет ночного действия.',
+      'srv.targetMafia': 'Нельзя выбрать члена своей мафии.',
+      'srv.alreadyInvestigated': 'Этой ночью вы уже проверяли игрока.',
+      'srv.investigateSelf': 'Нельзя проверять самого себя.',
+      'srv.skipDayOnly': 'Пропустить можно только дневное обсуждение.',
+      'srv.notVoting': 'Сейчас не время голосования.',
+      'srv.deadCantVote': 'Выбывшие игроки не могут голосовать.',
+      'srv.voteSelf': 'Нельзя голосовать за себя.',
+      'srv.notOver': 'Игра ещё не закончена.',
+      'srv.rateLimit': 'Слишком часто. Помедленнее.',
+      'srv.internal': 'Внутренняя ошибка сервера.',
+    },
+  };
+
+  /** English server message → Russian key. */
+  const SERVER_ERRORS = {
+    'Room codes must be exactly 4 letters or digits.': 'srv.codeFormat',
+    'Could not generate a free room code. Please try again.': 'srv.noFreeCode',
+    'A player name is required.': 'srv.nameRequired',
+    'Message must be text.': 'srv.msgNotText',
+    'Message is empty.': 'srv.msgEmpty',
+    'You cannot chat during the night.': 'srv.noChatNight',
+    'You are already in a room. Leave it first.': 'srv.alreadyInRoom',
+    'That room code is already taken.': 'srv.codeTaken',
+    'Room not found.': 'srv.roomNotFound',
+    'You left this game and cannot rejoin it.': 'srv.leftGame',
+    'This game has already started.': 'srv.started',
+    'The game has already started.': 'srv.started',
+    'This room is full.': 'srv.roomFull',
+    'That name is already taken in this room.': 'srv.nameTaken',
+    'You are not in a room.': 'srv.notInRoom',
+    'Only the host can do that.': 'srv.hostOnly',
+    'You can only kick players in the lobby.': 'srv.kickLobbyOnly',
+    'Player not found.': 'srv.playerNotFound',
+    'You cannot kick yourself.': 'srv.kickSelf',
+    'It is not night time.': 'srv.notNight',
+    'Dead players cannot act.': 'srv.deadCantAct',
+    'You have no night action.': 'srv.noNightAction',
+    'You cannot target a fellow Mafia member.': 'srv.targetMafia',
+    'You have already investigated someone tonight.': 'srv.alreadyInvestigated',
+    'You cannot investigate yourself.': 'srv.investigateSelf',
+    'You can only skip ahead during the day discussion.': 'srv.skipDayOnly',
+    'It is not voting time.': 'srv.notVoting',
+    'Dead players cannot vote.': 'srv.deadCantVote',
+    'You cannot vote for yourself.': 'srv.voteSelf',
+    'The game is not over yet.': 'srv.notOver',
+    'You are doing that too fast. Slow down.': 'srv.rateLimit',
+    'Internal server error.': 'srv.internal',
+  };
 
   /* ══════════════════════════ Socket & app state ══════════════════════════ */
 
@@ -490,56 +978,72 @@
   const ui = {
     showRoleCard: false,
     roleRevealed: false,
-    dayEvent: null,
-    overText: null,
+    dayEvent: null,   // { day, killed } from the last `day_event`
     chat: [],
     replaced: false,
     prevPhase: null,
   };
 
   const MIN_NAME = 2;
-  const DEFAULT_HINT = 'Joining a friend? Enter their 4-character code. Creating? Leave it empty for a random code, or choose your own.';
+  const MAX_NAME = 16;
   const IN_GAME = new Set(['night', 'day', 'voting']);
 
-  const ROLE_INFO = {
-    Mafia: {
-      desc: 'Each night, you and your team choose one person to eliminate. By day, blend in and stay out of suspicion.',
-      goal: 'You win when the Mafia equal or outnumber the Town.',
-    },
-    Doctor: {
-      desc: 'Each night, choose one person to protect. If the Mafia target them, they survive. You may protect yourself.',
-      goal: 'You win when every Mafia member is eliminated.',
-    },
-    Detective: {
-      desc: 'Each night, investigate one person to learn whether they are Mafia. Use what you learn carefully.',
-      goal: 'You win when every Mafia member is eliminated.',
-    },
-    Townsperson: {
-      desc: 'You have no night power. Watch, listen, and use your vote to find the Mafia.',
-      goal: 'You win when every Mafia member is eliminated.',
-    },
+  const NIGHT_ACTIONS = {
+    Mafia: { accent: 'var(--mafia)', targets: (me, p) => p.alive && p.role !== 'Mafia' },
+    Doctor: { accent: 'var(--doctor)', targets: (me, p) => p.alive },
+    Detective: { accent: 'var(--detective)', targets: (me, p) => p.alive && p.id !== me.id },
   };
 
-  const NIGHT_ACTIONS = {
-    Mafia: {
-      heading: 'Choose someone to eliminate',
-      help: 'Your team decides by most picks. If you split, one of the top picks is chosen at random.',
-      verb: 'Eliminate', done: 'Targeted', accent: 'var(--mafia)',
-      targets: (me, p) => p.alive && p.role !== 'Mafia',
-    },
-    Doctor: {
-      heading: 'Choose someone to protect',
-      help: 'If the Mafia target your patient, they survive the night. You may protect yourself.',
-      verb: 'Protect', done: 'Protected', accent: 'var(--doctor)',
-      targets: (me, p) => p.alive,
-    },
-    Detective: {
-      heading: 'Choose someone to investigate',
-      help: 'You learn whether they are Mafia. You can investigate one person each night.',
-      verb: 'Investigate', done: 'Investigated', accent: 'var(--detective)',
-      targets: (me, p) => p.alive && p.id !== me.id,
-    },
+  /* ══════════════════════════ Storage helpers ══════════════════════════ */
+
+  const store = {
+    get(key) { try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; } },
+    set(key, value) { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* storage blocked */ } },
+    del(key) { try { sessionStorage.removeItem(key); } catch { /* storage blocked */ } },
   };
+  const remember = {
+    get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
+    set(key, value) { try { localStorage.setItem(key, value); } catch { /* storage blocked */ } },
+  };
+
+  /* ══════════════════════════ i18n engine ══════════════════════════ */
+
+  function detectLang() {
+    const saved = remember.get('mafia.lang');
+    if (saved === 'en' || saved === 'ru') return saved;
+    return (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+  }
+
+  let lang = detectLang();
+
+  /** Translate a key; `{name}` placeholders are filled in a single pass. */
+  function t(key, params) {
+    const value = I18N[lang][key] ?? I18N.en[key] ?? key;
+    if (typeof value !== 'string') return key;
+    return params ? value.replace(/\{(\w+)\}/g, (_, k) => (params[k] ?? '')) : value;
+  }
+
+  /** Plural-aware count ("1 vote", "2 голоса", "5 голосов"). */
+  function tp(key, n) {
+    const forms = I18N[lang][key] ?? I18N.en[key];
+    const rule = new Intl.PluralRules(lang).select(n);
+    return (forms[rule] ?? forms.other).replace('{n}', String(n));
+  }
+
+  const roleName = (role) => t(`role.${role}`);
+
+  /** Server errors are always English; translate the known ones when in Russian. */
+  function translateServerError(message) {
+    if (typeof message !== 'string' || lang === 'en') return message;
+    const known = SERVER_ERRORS[message];
+    if (known) return t(known);
+    let m = message.match(/^Names must be at least (\d+) characters long\.$/);
+    if (m) return t('srv.nameShort', { n: m[1] });
+    m = message.match(/^At least (\d+) connected players are required to start\.$/);
+    if (m) return t('srv.needPlayers', { n: m[1] });
+    if (/^That (target|suspect) is not a living player\.$/.test(message)) return t('srv.notLiving');
+    return message;
+  }
 
   /* ══════════════════════════ Small helpers ══════════════════════════ */
 
@@ -560,18 +1064,34 @@
     return node;
   }
 
-  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  const nameOf = (id) => state?.players.find((p) => p.id === id)?.name ?? 'Unknown';
+  /** Renders `**bold**` segments as <strong> without ever using innerHTML. */
+  function richInto(node, str) {
+    node.replaceChildren(...str.split('**').map((part, i) =>
+      (i % 2 ? el('strong', { text: part }) : document.createTextNode(part))));
+  }
 
-  const store = {
-    get(key) { try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; } },
-    set(key, value) { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* storage blocked */ } },
-    del(key) { try { sessionStorage.removeItem(key); } catch { /* storage blocked */ } },
-  };
-  const remember = {
-    get(key) { try { return localStorage.getItem(key) || ''; } catch { return ''; } },
-    set(key, value) { try { localStorage.setItem(key, value); } catch { /* storage blocked */ } },
-  };
+  /** Applies translations to everything declared in the static markup. */
+  function applyStatic() {
+    document.documentElement.lang = lang;
+    document.title = t('app.title');
+    document.querySelectorAll('[data-i18n]').forEach((n) => { n.textContent = t(n.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-rich]').forEach((n) => richInto(n, t(n.dataset.i18nRich)));
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((n) => n.setAttribute('placeholder', t(n.dataset.i18nPlaceholder)));
+    document.querySelectorAll('[data-i18n-aria]').forEach((n) => n.setAttribute('aria-label', t(n.dataset.i18nAria)));
+    document.querySelectorAll('.lang-btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+  }
+
+  function setLang(next) {
+    if (next !== 'en' && next !== 'ru') return;
+    if (next === lang) return;
+    lang = next;
+    remember.set('mafia.lang', lang);
+    applyStatic();
+    if (!state) checkRoomHint();
+    render();
+    renderChatMessages();
+    if (currentModal && modalIsOpen()) fillModal(currentModal);
+  }
 
   function toast(message, kind = 'error') {
     const box = $('toasts');
@@ -593,20 +1113,37 @@
     return q && /^[A-Za-z0-9]{4}$/.test(q) ? q.toUpperCase() : '';
   }
 
-  /** Emit with ack, timeout and uniform error display. */
+  /**
+   * Room codes are Latin letters and digits. If a player types with the Russian
+   * keyboard layout, map each Cyrillic letter to the Latin key in the same position.
+   */
+  const RU_TO_LATIN = {
+    'й': 'Q', 'ц': 'W', 'у': 'E', 'к': 'R', 'е': 'T', 'н': 'Y', 'г': 'U', 'ш': 'I', 'щ': 'O', 'з': 'P',
+    'ф': 'A', 'ы': 'S', 'в': 'D', 'а': 'F', 'п': 'G', 'р': 'H', 'о': 'J', 'л': 'K', 'д': 'L',
+    'я': 'Z', 'ч': 'X', 'с': 'C', 'м': 'V', 'и': 'B', 'т': 'N', 'ь': 'M',
+  };
+  function normalizeCode(raw) {
+    return Array.from(String(raw).toLowerCase())
+      .map((ch) => RU_TO_LATIN[ch] ?? ch.toUpperCase())
+      .join('')
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 4);
+  }
+
+  /** Emit with ack, timeout and uniform (translated) error display. */
   function send(event, data, done) {
     if (!socket.connected) {
-      toast('Not connected to the server yet. Trying to reconnect...');
+      toast(t('err.notConnected'));
       if (done) done(null);
       return;
     }
     socket.timeout(8000).emit(event, data, (err, res) => {
       if (err) {
-        toast('The server took too long to respond. Try again.');
+        toast(t('err.timeout'));
         if (done) done(null);
         return;
       }
-      if (!res || !res.ok) toast((res && res.error) || 'Something went wrong.');
+      if (!res || !res.ok) toast(translateServerError(res && res.error) || t('err.generic'));
       if (done) done(res);
     });
   }
@@ -616,25 +1153,60 @@
     return entry ? entry.text : '';
   }
 
+  /**
+   * After a reconnect the client only has the English log line for last night.
+   * Extract its data so it can be shown in the active language.
+   */
+  function parseNightLog() {
+    const line = lastLogText('night_result');
+    if (!line) return null;
+    const body = line.replace(/^Day \d+ begins\.\s*/, '');
+    const m = body.match(/^(.+) was killed by the Mafia during the night\. They were the (.+)\.$/);
+    if (m) return { killed: { name: m[1], role: m[2] } };
+    if (/no one died last night/.test(body)) return { killed: null };
+    return null;
+  }
+
+  const nightResultText = (killed) => (killed
+    ? t('night.killed', { name: killed.name, role: roleName(killed.role) })
+    : t('night.peaceful'));
+
+  function voteResultText(e) {
+    switch (e.reason) {
+      case 'majority':
+        return t('voteRes.majority', { name: e.eliminated.name, role: roleName(e.eliminated.role) });
+      case 'tie': return t('voteRes.tie');
+      case 'skip': return t('voteRes.skip');
+      default: return t('voteRes.noVotes');
+    }
+  }
+
   /* ══════════════════════════ Modal queue ══════════════════════════ */
 
   const modal = $('modal');
   const modalQueue = [];
+  let currentModal = null;
 
   function modalIsOpen() { return modal.hasAttribute('open'); }
 
-  function showModal({ title, body, tone = '', ok = 'OK' }) {
-    modalQueue.push({ title, body, tone, ok });
+  /** `title`, `body` and `ok` are functions so an open popup can be re-rendered on language change. */
+  function showModal(descriptor) {
+    modalQueue.push(descriptor);
     if (!modalIsOpen()) nextModal();
+  }
+
+  function fillModal(m) {
+    $('modalTitle').textContent = m.title();
+    $('modalBody').replaceChildren(...[].concat(m.body()));
+    $('modalOk').textContent = m.ok ? m.ok() : t('modal.ok');
+    modal.dataset.tone = m.tone || '';
   }
 
   function nextModal() {
     const m = modalQueue.shift();
+    currentModal = m || null;
     if (!m) return;
-    $('modalTitle').textContent = m.title;
-    $('modalBody').replaceChildren(...[].concat(m.body));
-    $('modalOk').textContent = m.ok;
-    modal.dataset.tone = m.tone;
+    fillModal(m);
     if (typeof modal.showModal === 'function') modal.showModal();
     else modal.setAttribute('open', '');
     $('modalOk').focus();
@@ -660,7 +1232,7 @@
   const tag = (text, kind = '') => el('span', { class: `tag ${kind}`.trim(), text });
 
   function roleTag(role) {
-    return el('span', { class: 'tag', 'data-role': role, text: role });
+    return el('span', { class: 'tag', 'data-role': role, text: roleName(role) });
   }
 
   function playerRow(p, { tags = [], sub = null, button = null } = {}) {
@@ -680,6 +1252,8 @@
       style: accent ? `--accent:${accent}` : false, onclick: onClick,
     }, label);
   }
+
+  const nameOf = (id) => state?.players.find((p) => p.id === id)?.name ?? '?';
 
   /* ══════════════════════════ Rendering ══════════════════════════ */
 
@@ -718,36 +1292,29 @@
   function renderTopbar() {
     $('topbar').hidden = !state;
     if (!state) return;
-    $('roomChip').textContent = `Room ${state.code}`;
-    const labels = {
-      lobby: 'Lobby',
-      night: `Night ${state.day}`,
-      day: `Day ${state.day}`,
-      voting: `Vote, day ${state.day}`,
-      ended: 'Game over',
-    };
-    $('phaseLabel').textContent = labels[state.phase] || '';
-    const showRoleBtn = IN_GAME.has(state.phase) && !!state.you.role;
-    $('roleBtn').hidden = !showRoleBtn;
-    $('roleBtn').textContent = ui.showRoleCard ? 'Back to Game' : 'My Role';
+    $('roomChip').textContent = t('room.chip', { code: state.code });
+    const keys = { lobby: 'phase.lobby', night: 'phase.night', day: 'phase.day', voting: 'phase.voting', ended: 'phase.ended' };
+    $('phaseLabel').textContent = keys[state.phase] ? t(keys[state.phase], { n: state.day }) : '';
+    $('roleBtn').hidden = !(IN_GAME.has(state.phase) && !!state.you.role);
+    $('roleBtn').textContent = ui.showRoleCard ? t('btn.backToGame') : t('btn.role');
   }
 
   /* ── Screen 2: Lobby ── */
   function renderLobby() {
     const me = state.you;
     $('lobbyCode').textContent = state.code;
-    $('lobbyCount').textContent = `Players (${state.players.length} of ${state.maxPlayers})`;
+    $('lobbyCount').textContent = t('lobby.count', { n: state.players.length, max: state.maxPlayers });
 
     $('lobbyList').replaceChildren(...state.players.map((p) => {
       const tags = [];
-      if (p.isHost) tags.push(tag('Host', 'host'));
-      if (p.id === me.id) tags.push(tag('You'));
-      if (!p.connected) tags.push(tag('Offline'));
+      if (p.isHost) tags.push(tag(t('tag.host'), 'host'));
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
+      if (!p.connected) tags.push(tag(t('tag.offline')));
       const kick = me.isHost && p.id !== me.id
         ? el('button', {
-            class: 'btn btn-xs', type: 'button', 'aria-label': `Remove ${p.name}`,
+            class: 'btn btn-xs', type: 'button', 'aria-label': t('lobby.removeAria', { name: p.name }),
             onclick: () => send('kick_player', { playerId: p.id }),
-          }, 'Remove')
+          }, t('lobby.remove'))
         : null;
       return playerRow(p, { tags, button: kick });
     }));
@@ -756,29 +1323,28 @@
     $('hostControls').hidden = !me.isHost;
     $('guestWait').hidden = me.isHost;
     $('startHint').textContent = connected >= state.minPlayers
-      ? `${plural(connected, 'player')} ready. Start whenever everyone is in.`
-      : `Need at least ${state.minPlayers} players to start. ${plural(connected, 'player')} connected so far.`;
+      ? t('lobby.hintReady', { n: connected })
+      : t('lobby.hintWaiting', { min: state.minPlayers, n: connected });
   }
 
   /* ── Screen 3: Role card ── */
   function renderRole() {
     const role = state.you.role;
-    const info = ROLE_INFO[role] || { desc: '', goal: '' };
     $('roleCard').dataset.role = role;
     $('roleCard').classList.toggle('revealed', ui.roleRevealed);
-    $('roleName').textContent = role;
-    $('roleDesc').textContent = info.desc;
-    $('roleGoal').textContent = info.goal;
+    $('roleName').textContent = roleName(role);
+    $('roleDesc').textContent = t(`role.desc.${role}`);
+    $('roleGoal').textContent = t(role === 'Mafia' ? 'role.goal.Mafia' : 'role.goal.Town');
     $('roleFront').setAttribute('aria-hidden', String(!ui.roleRevealed));
     $('roleBack').setAttribute('aria-hidden', String(ui.roleRevealed));
-    $('toggleRoleBtn').textContent = ui.roleRevealed ? 'Hide Role' : 'Show Role';
+    $('toggleRoleBtn').textContent = ui.roleRevealed ? t('role.hide') : t('role.show');
 
     const team = $('roleTeam');
     const mates = role === 'Mafia' ? state.you.teammates : [];
     team.hidden = mates.length === 0;
     team.replaceChildren(
       ...(mates.length
-        ? [el('span', { class: 'muted', text: mates.length === 1 ? 'Your partner' : 'Your partners' }),
+        ? [el('span', { class: 'muted', text: t(mates.length === 1 ? 'role.partner' : 'role.partners') }),
            ...mates.map((m) => playerRow({ name: m.name, alive: true }))]
         : []));
   }
@@ -791,14 +1357,14 @@
     let title;
     let text;
     if (!me.alive) {
-      title = 'Spectating';
-      text = cfg ? "You can no longer act, but you can watch the night pass." : 'You are out of the game. Watch the night pass.';
+      title = t('night.specTitle');
+      text = t(cfg ? 'night.specTextAct' : 'night.specText');
     } else if (!cfg) {
-      title = 'Sleeping...';
-      text = 'You have no night power. Stay quiet until morning.';
+      title = t('night.sleepTitle');
+      text = t('night.sleepText');
     } else {
-      title = `Night ${state.day}`;
-      text = 'The town is asleep. Make your move before dawn.';
+      title = t('night.title', { n: state.day });
+      text = t('night.text');
     }
     $('nightTitle').textContent = title;
     $('nightText').textContent = text;
@@ -808,27 +1374,28 @@
   }
 
   function renderNightActions(me, cfg) {
+    const role = me.role;
     const night = state.night; // null when dead or when no action is available
     const myTarget = night ? night.myTarget : null;
     const locked = !!(night && night.locked);
     const canAct = me.alive && !!night && !locked;
 
     $('nightActions').style.setProperty('--accent', cfg.accent);
-    $('nightHeading').textContent = cfg.heading;
-    const mates = me.role === 'Mafia' ? me.teammates.map((t) => t.name) : [];
-    $('nightHelp').textContent = cfg.help + (mates.length ? ` Fellow Mafia: ${mates.join(', ')}.` : '');
+    $('nightHeading').textContent = t(`act.${role}.heading`);
+    const mates = role === 'Mafia' ? me.teammates.map((m) => m.name) : [];
+    $('nightHelp').textContent = t(`act.${role}.help`) + (mates.length ? t('night.mates', { names: mates.join(', ') }) : '');
 
     const teamPicks = night ? night.teamPicks : [];
     const rows = state.players.filter((p) => cfg.targets(me, p)).map((p) => {
       const tags = [];
-      if (p.id === me.id) tags.push(tag('You'));
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
       for (const pick of teamPicks.filter((x) => x.targetId === p.id)) {
-        tags.push(tag(pick.mafiaId === me.id ? 'Your pick' : `${nameOf(pick.mafiaId)}'s pick`, 'danger'));
+        tags.push(tag(pick.mafiaId === me.id ? t('night.pickYours') : t('night.pickOf', { name: nameOf(pick.mafiaId) }), 'danger'));
       }
       return playerRow(p, {
         tags,
         button: pickButton({
-          label: myTarget === p.id ? cfg.done : cfg.verb,
+          label: myTarget === p.id ? t(`act.${role}.done`) : t(`act.${role}.verb`),
           pressed: myTarget === p.id,
           disabled: !canAct,
           accent: cfg.accent,
@@ -839,10 +1406,10 @@
     $('nightList').replaceChildren(...rows);
 
     let status;
-    if (!me.alive) status = "You are dead, so you can't act.";
-    else if (locked) status = `You investigated ${nameOf(myTarget)}. Wait for dawn.`;
-    else if (myTarget) status = `You chose ${nameOf(myTarget)}.${me.role === 'Detective' ? '' : ' You can change your choice until dawn.'}`;
-    else status = 'Pick someone before dawn.';
+    if (!me.alive) status = t('status.dead');
+    else if (locked) status = t('status.locked', { name: nameOf(myTarget) });
+    else if (myTarget) status = t('status.chose', { name: nameOf(myTarget) }) + (role === 'Detective' ? '' : t('status.change'));
+    else status = t('status.pick');
     $('nightStatus').textContent = status;
   }
 
@@ -852,35 +1419,30 @@
     const voting = state.phase === 'voting';
     const v = state.vote || { counts: {}, skip: 0, voted: [], total: 0, myVote: null };
 
-    let text = '';
-    let deadly = false;
-    if (ui.dayEvent && ui.dayEvent.day === state.day) {
-      text = ui.dayEvent.text;
-      deadly = !!ui.dayEvent.killed;
-    } else {
-      text = lastLogText('night_result').replace(/^Day \d+ begins\.\s*/, '');
-      deadly = /was killed by the Mafia/.test(text);
-    }
-    $('dayTitle').textContent = `Day ${state.day}`;
-    $('dayText').textContent = text;
-    $('dayAnnounce').classList.toggle('deadly', deadly);
+    let outcome = null;
+    if (ui.dayEvent && ui.dayEvent.day === state.day) outcome = { killed: ui.dayEvent.killed };
+    else outcome = parseNightLog();
 
-    $('dayHeading').textContent = voting ? 'Who is the Mafia?' : 'Discussion';
+    $('dayTitle').textContent = t('day.title', { n: state.day });
+    $('dayText').textContent = outcome ? nightResultText(outcome.killed) : '';
+    $('dayAnnounce').classList.toggle('deadly', !!(outcome && outcome.killed));
+
+    $('dayHeading').textContent = voting ? t('day.whoMafia') : t('day.discussion');
     $('dayStatus').textContent = voting
-      ? `${v.voted.length} of ${v.total} votes cast. You can change your vote until everyone has voted.`
-      : 'Talk it through. Voting opens when the timer ends or the host starts it.';
+      ? t('day.statusVoting', { voted: v.voted.length, total: v.total })
+      : t('day.statusDiscussion');
 
     const alive = state.players.filter((p) => p.alive);
     $('voteList').replaceChildren(...alive.map((p) => {
       const tags = [];
-      if (p.id === me.id) tags.push(tag('You'));
-      if (voting && v.voted.includes(p.id)) tags.push(tag('Voted', 'ok'));
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
+      if (voting && v.voted.includes(p.id)) tags.push(tag(t('vote.voted'), 'ok'));
       const n = v.counts[p.id] || 0;
-      if (voting && n > 0) tags.push(tag(plural(n, 'vote'), 'votes'));
+      if (voting && n > 0) tags.push(tag(tp('plural.votes', n), 'votes'));
       return playerRow(p, {
         tags,
         button: pickButton({
-          label: v.myVote === p.id ? 'Voted' : 'Vote',
+          label: v.myVote === p.id ? t('vote.voted') : t('vote.cast'),
           pressed: v.myVote === p.id,
           disabled: !voting || !me.alive || p.id === me.id,
           onClick: () => castVote(p.id),
@@ -889,7 +1451,7 @@
     }));
 
     const skip = $('skipVoteBtn');
-    skip.textContent = `Skip Vote${voting && v.skip ? ` (${v.skip})` : ''}`;
+    skip.textContent = t('vote.skip') + (voting && v.skip ? ` (${v.skip})` : '');
     skip.setAttribute('aria-pressed', String(v.myVote === 'skip'));
     skip.disabled = !voting || !me.alive;
 
@@ -904,9 +1466,9 @@
   }
 
   function causeText(p) {
-    if (p.deathCause === 'mafia') return 'Killed by the Mafia';
-    if (p.deathCause === 'vote') return 'Voted out by the town';
-    if (p.deathCause === 'left') return 'Left the game';
+    if (p.deathCause === 'mafia') return t('cause.mafia');
+    if (p.deathCause === 'vote') return t('cause.vote');
+    if (p.deathCause === 'left') return t('cause.left');
     return null;
   }
 
@@ -924,15 +1486,15 @@
     const me = state.you;
     const mafiaWon = state.winner === 'Mafia';
     $('verdict').dataset.winner = state.winner || '';
-    $('overTitle').textContent = mafiaWon ? 'The Mafia wins' : 'The Town wins';
-    $('overText').textContent = ui.overText || lastLogText('game_over');
+    $('overTitle').textContent = t(mafiaWon ? 'over.mafiaWins' : 'over.townWins');
+    $('overText').textContent = t(mafiaWon ? 'over.textMafia' : 'over.textTown');
     const won = (me.role === 'Mafia') === mafiaWon;
-    $('overYou').textContent = me.role ? `You were the ${me.role}. ${won ? 'Your side won.' : 'Your side lost.'}` : '';
+    $('overYou').textContent = me.role ? t(won ? 'over.youWon' : 'over.youLost', { role: roleName(me.role) }) : '';
 
     $('overList').replaceChildren(...state.players.map((p) => {
       const tags = [p.role ? roleTag(p.role) : null];
-      if (p.id === me.id) tags.push(tag('You'));
-      return playerRow(p, { tags, sub: p.alive ? 'Survived' : causeText(p) });
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
+      return playerRow(p, { tags, sub: p.alive ? t('cause.survived') : causeText(p) });
     }));
 
     $('returnBtn').disabled = !me.isHost;
@@ -950,8 +1512,8 @@
     $('notes').hidden = !show;
     if (!show) return;
     $('notesList').replaceChildren(...list.map((n) => el('li', {},
-      `Night ${n.day}: ${n.targetName} is `,
-      el('span', { class: n.result === 'Mafia' ? 'bad' : 'good', text: n.result === 'Mafia' ? 'Mafia' : 'Town' }))));
+      t('notes.prefix', { n: n.day, name: n.targetName }),
+      el('span', { class: n.result === 'Mafia' ? 'bad' : 'good', text: t(n.result === 'Mafia' ? 'res.mafia' : 'res.town') }))));
   }
 
   function chatMode(screen) {
@@ -960,15 +1522,11 @@
     switch (state.phase) {
       case 'lobby':
       case 'ended':
-        return { label: 'Everyone in the room can read this.', enabled: true };
+        return { label: t('chat.room'), enabled: true };
       case 'night':
-        return me.alive && me.role === 'Mafia'
-          ? { label: 'Mafia chat. Only your team can read this.', enabled: true }
-          : null;
+        return me.alive && me.role === 'Mafia' ? { label: t('chat.mafia'), enabled: true } : null;
       default:
-        return me.alive
-          ? { label: 'Town chat. Everyone can read this.', enabled: true }
-          : { label: 'Dead chat. Only eliminated players can read this.', enabled: true };
+        return me.alive ? { label: t('chat.town'), enabled: true } : { label: t('chat.dead'), enabled: true };
     }
   }
 
@@ -984,7 +1542,7 @@
   function renderChatMessages() {
     const log = $('chatLog');
     if (ui.chat.length === 0) {
-      log.replaceChildren(el('li', { class: 'msg-empty', text: 'No messages yet.' }));
+      log.replaceChildren(el('li', { class: 'msg-empty', text: t('chat.empty') }));
       return;
     }
     log.replaceChildren(...ui.chat.map((m) => el('li', {
@@ -996,12 +1554,12 @@
   /* ══════════════════════════ Countdown ══════════════════════════ */
 
   function tick() {
-    const t = $('phaseTimer');
-    if (!state || !state.phaseEndsAt) { t.hidden = true; return; }
+    const timer = $('phaseTimer');
+    if (!state || !state.phaseEndsAt) { timer.hidden = true; return; }
     const remain = Math.max(0, Math.ceil((state.phaseEndsAt - (Date.now() + clockOffset)) / 1000));
-    t.hidden = false;
-    t.textContent = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
-    t.classList.toggle('urgent', remain <= 10);
+    timer.hidden = false;
+    timer.textContent = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
+    timer.classList.toggle('urgent', remain <= 10);
   }
   setInterval(tick, 250);
 
@@ -1018,8 +1576,8 @@
 
   function readName() {
     const name = nameInput.value.replace(/\s+/g, ' ').trim();
-    if (name.length < MIN_NAME || name.length > 16) {
-      toast(`Enter a nickname between ${MIN_NAME} and 16 characters.`);
+    if (name.length < MIN_NAME || name.length > MAX_NAME) {
+      toast(t('err.nickname', { min: MIN_NAME, max: MAX_NAME }));
       nameInput.focus();
       return null;
     }
@@ -1037,7 +1595,7 @@
     const name = readName();
     if (!name) return;
     const code = codeInput.value.trim().toUpperCase();
-    if (code && !/^[A-Z0-9]{4}$/.test(code)) { toast('Room codes are exactly 4 letters or digits.'); codeInput.focus(); return; }
+    if (code && !/^[A-Z0-9]{4}$/.test(code)) { toast(t('err.codeFormat')); codeInput.focus(); return; }
     ui.replaced = false;
     setBusy(true);
     send('create_room', { name, code: code || undefined }, (res) => {
@@ -1051,7 +1609,7 @@
     const name = readName();
     if (!name) return;
     const code = codeInput.value.trim().toUpperCase();
-    if (!/^[A-Z0-9]{4}$/.test(code)) { toast('Enter the 4-character room code to join.'); codeInput.focus(); return; }
+    if (!/^[A-Z0-9]{4}$/.test(code)) { toast(t('err.codeNeeded')); codeInput.focus(); return; }
     ui.replaced = false;
     const saved = store.get('mafia.session');
     setBusy(true);
@@ -1067,20 +1625,18 @@
     ui.showRoleCard = false;
     ui.roleRevealed = false;
     ui.dayEvent = null;
-    ui.overText = null;
     ui.chat = [];
     ui.prevPhase = null;
     updateUrl(null);
     codeInput.value = '';
-    $('codeHint').textContent = DEFAULT_HINT;
+    $('codeHint').textContent = t('hint.default');
     renderChatMessages();
     render();
   }
 
   function leaveRoom() {
     if (!state) return;
-    if (IN_GAME.has(state.phase) && state.you.alive &&
-        !confirm('Leaving now forfeits the game and eliminates you. Leave anyway?')) return;
+    if (IN_GAME.has(state.phase) && state.you.alive && !confirm(t('confirm.leave'))) return;
     send('leave_room', {}, (res) => { if (res && res.ok) resetToJoinScreen(); });
   }
 
@@ -1092,7 +1648,8 @@
       if (err) return; // try again on the next connect
       if (res && res.ok) { updateUrl(res.code); return; }
       resetToJoinScreen();
-      toast(`Couldn't rejoin your game${res && res.error ? `: ${res.error}` : '.'}`, 'info');
+      const why = translateServerError(res && res.error);
+      toast(why ? t('toast.rejoinFailWhy', { reason: why }) : t('toast.rejoinFail'), 'info');
     });
   }
 
@@ -1100,27 +1657,27 @@
   async function checkRoomHint() {
     const code = codeInput.value.toUpperCase();
     const hint = $('codeHint');
-    if (!/^[A-Z0-9]{4}$/.test(code)) { hint.textContent = DEFAULT_HINT; return; }
+    if (!/^[A-Z0-9]{4}$/.test(code)) { hint.textContent = t('hint.default'); return; }
     try {
       const res = await fetch(`/api/rooms/${code}`);
       if (codeInput.value.toUpperCase() !== code) return; // input changed meanwhile
       if (res.status === 404) {
-        hint.textContent = 'No room has this code yet. Create Room will open one with it.';
+        hint.textContent = t('hint.noRoom');
       } else if (res.ok) {
         const info = await res.json();
         hint.textContent = info.joinable
-          ? `Room ${code} is open with ${plural(info.players, 'player')}.`
-          : 'That game has already started or is full.';
+          ? t('hint.open', { code, players: tp('plural.players', info.players) })
+          : t('hint.closed');
       } else {
-        hint.textContent = DEFAULT_HINT;
+        hint.textContent = t('hint.default');
       }
     } catch {
-      hint.textContent = DEFAULT_HINT;
+      hint.textContent = t('hint.default');
     }
   }
 
   codeInput.addEventListener('input', () => {
-    codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    codeInput.value = normalizeCode(codeInput.value);
     clearTimeout(hintTimer);
     hintTimer = setTimeout(checkRoomHint, 250);
   });
@@ -1132,6 +1689,10 @@
   $('joinBtn').addEventListener('click', joinRoom);
   $('leaveBtn').addEventListener('click', leaveRoom);
 
+  document.querySelectorAll('.lang-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setLang(btn.dataset.lang));
+  });
+
   /* ══════════════════════════ In-room controls ══════════════════════════ */
 
   async function copyInvite() {
@@ -1139,9 +1700,9 @@
     const url = `${location.origin}/room/${state.code}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast('Invite link copied.', 'ok');
+      toast(t('toast.linkCopied'), 'ok');
     } catch {
-      toast(`Copy this link: ${url}`, 'info');
+      toast(t('toast.copyManual', { url }), 'info');
     }
   }
 
@@ -1151,7 +1712,7 @@
     if (!state) return;
     const connected = state.players.filter((p) => p.connected).length;
     if (connected < state.minPlayers) {
-      toast(`Need at least ${state.minPlayers} players to start (${connected} connected).`);
+      toast(t('err.needPlayers', { min: state.minPlayers, n: connected }));
       return;
     }
     send('start_game', {});
@@ -1203,7 +1764,6 @@
     if (s.phase === 'lobby' && ui.prevPhase && ui.prevPhase !== 'lobby') {
       ui.chat = [];
       ui.dayEvent = null;
-      ui.overText = null;
       ui.showRoleCard = false;
       ui.roleRevealed = false;
       renderChatMessages();
@@ -1217,7 +1777,6 @@
     ui.showRoleCard = true;
     ui.roleRevealed = false;
     ui.dayEvent = null;
-    ui.overText = null;
     ui.chat = [];
     renderChatMessages();
   });
@@ -1228,22 +1787,19 @@
     if (p.phase !== 'night') { ui.showRoleCard = false; ui.roleRevealed = false; }
   });
 
-  socket.on('day_event', (e) => { ui.dayEvent = e; });
+  // The announcement text is rebuilt on the client from structured data, so it follows the active language.
+  socket.on('day_event', (e) => { ui.dayEvent = { day: e.day, killed: e.killed }; });
 
   socket.on('player_eliminated', (e) => {
-    if (!state || e.id !== state.you.id) return;
-    const reasons = {
-      mafia: 'The Mafia killed you during the night.',
-      vote: 'The town voted you out.',
-      left: 'You left the game.',
-    };
-    if (e.cause === 'left') return;
+    if (!state || e.id !== state.you.id || e.cause === 'left') return;
     showModal({
-      title: 'You have been eliminated',
+      title: () => t('elim.title'),
       tone: 'mafia',
-      body: [el('p', { text: reasons[e.cause] || 'You are out of the game.' }),
-             el('p', { class: 'muted', text: 'You can keep watching and chat with other dead players.' })],
-      ok: 'Keep Watching',
+      body: () => [
+        el('p', { text: t(e.cause === 'mafia' ? 'elim.mafia' : e.cause === 'vote' ? 'elim.vote' : 'elim.default') }),
+        el('p', { class: 'muted', text: t('elim.note') }),
+      ],
+      ok: () => t('elim.keep'),
     });
   });
 
@@ -1254,10 +1810,12 @@
         { day: state.day, targetId: r.targetId, targetName: r.targetName, result: r.result }];
     }
     showModal({
-      title: 'Investigation result',
+      title: () => t('inv.title'),
       tone: isMafia ? 'mafia' : 'town',
-      body: [el('p', { class: `modal-big ${isMafia ? 'mafia' : 'town'}` }, `${r.targetName} is ${isMafia ? 'Mafia' : 'Town'}`),
-             el('p', { class: 'muted', text: isMafia ? 'Choose who you tell, and when.' : 'They are not Mafia.' })],
+      body: () => [
+        el('p', { class: `modal-big ${isMafia ? 'mafia' : 'town'}`, text: t(isMafia ? 'inv.mafia' : 'inv.town', { name: r.targetName }) }),
+        el('p', { class: 'muted', text: t(isMafia ? 'inv.subMafia' : 'inv.subTown') }),
+      ],
     });
     render();
   });
@@ -1282,20 +1840,23 @@
   });
 
   socket.on('vote_result', (e) => {
-    const body = [el('p', { text: e.text })];
-    if (e.votes.length) {
-      body.push(el('ul', { class: 'list' }, e.votes.map((v) => el('li', { class: 'vote-line' },
-        el('strong', { text: v.voterName }), ' voted ',
-        v.targetName ? el('strong', { text: v.targetName }) : 'to skip'))));
-    }
     showModal({
-      title: e.eliminated ? 'The town has spoken' : 'No one was eliminated',
+      title: () => t(e.eliminated ? 'voteRes.eliminated' : 'voteRes.none'),
       tone: e.eliminated && e.eliminated.role === 'Mafia' ? 'town' : '',
-      body,
+      body: () => {
+        const nodes = [el('p', { text: voteResultText(e) })];
+        if (e.votes.length) {
+          nodes.push(el('ul', { class: 'list' }, e.votes.map((v) => el('li', { class: 'vote-line' },
+            el('strong', { text: v.voterName }),
+            v.targetName ? [t('vote.for'), el('strong', { text: v.targetName })] : t('vote.skipped')))));
+        }
+        return nodes;
+      },
     });
   });
 
-  socket.on('game_over', (e) => { ui.overText = e.text; });
+  // The verdict text is derived from `state.winner` in the active language (see renderOver).
+  socket.on('game_over', () => { /* room_state follows with phase "ended" */ });
 
   socket.on('chat_message', (m) => {
     ui.chat.push(m);
@@ -1303,25 +1864,26 @@
     renderChatMessages();
   });
 
-  socket.on('kicked', (e) => {
+  socket.on('kicked', () => {
     resetToJoinScreen();
-    toast((e && e.reason) || 'You were removed from the room.');
+    toast(t('toast.kicked'));
   });
 
   socket.on('session_replaced', () => {
     ui.replaced = true;
     state = null;
     render();
-    toast('This game was opened in another tab, so this tab was disconnected from it.', 'info');
+    toast(t('toast.replaced'), 'info');
   });
 
-  socket.on('error_message', (e) => toast(e.message));
+  socket.on('error_message', (e) => toast(translateServerError(e.message) || t('err.generic')));
 
   /* ══════════════════════════ Boot ══════════════════════════ */
 
+  applyStatic();
   nameInput.value = remember.get('mafia.name');
   codeInput.value = codeFromUrl();
-  $('codeHint').textContent = DEFAULT_HINT;
+  $('codeHint').textContent = t('hint.default');
   if (codeInput.value) checkRoomHint();
   renderChatMessages();
   render();
