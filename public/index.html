@@ -228,6 +228,26 @@
     color: var(--lamp); text-align: center; user-select: all;
   }
 
+  /* ───────────────────────────── Role settings ───────────────────────────── */
+  .role-row {
+    display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 12px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .role-swatch { flex: none; width: 8px; height: 34px; border-radius: 6px; background: var(--role, var(--line)); }
+  .role-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .stepper { display: flex; align-items: center; gap: 4px; }
+  .stepper-btn { width: 44px; min-height: 44px; height: 44px; padding: 0; font-size: 1.4rem; line-height: 1; border-radius: 12px; }
+  .stepper-value { min-width: 2.4ch; text-align: center; font: 700 1.3rem var(--serif); font-variant-numeric: tabular-nums; }
+  .role-count { min-width: 2.4ch; text-align: center; font: 700 1.5rem var(--serif); color: var(--role, var(--text)); font-variant-numeric: tabular-nums; }
+  .role-total {
+    text-align: center; font-weight: 600; padding: 10px 12px; border-radius: 12px;
+    background: var(--bg); border: 1px solid var(--line); overflow-wrap: anywhere;
+  }
+  .role-total.ok { color: var(--doctor); border-color: rgba(76, 199, 172, 0.55); }
+  .role-total.bad { color: var(--mafia); border-color: rgba(224, 80, 111, 0.55); }
+  .role-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .start-error { color: var(--mafia); font-weight: 600; }
+
   /* ───────────────────────────── Role card ───────────────────────────── */
   .screen-title { font-size: 1.75rem; }
   .role-stage { display: grid; place-items: center; perspective: 1200px; padding: 6px 0 4px; }
@@ -406,9 +426,19 @@
         <h3 id="lobbyCount"></h3>
         <ul class="list" id="lobbyList"></ul>
       </div>
+      <div class="card" id="roleSettings">
+        <h3 data-i18n="roles.title">Role Settings</h3>
+        <p class="muted" id="roleIntro"></p>
+        <ul class="list" id="roleList"></ul>
+        <p class="role-total" id="roleTotal" role="status"></p>
+        <div class="role-foot">
+          <p class="hint" id="roleMode"></p>
+          <button class="btn btn-xs" type="button" id="roleAutoBtn" data-i18n="roles.auto" hidden>Auto-Balance</button>
+        </div>
+      </div>
       <div id="hostControls" class="stack" hidden>
         <button class="btn btn-primary btn-wide" type="button" id="startBtn" data-i18n="lobby.start">Start Game</button>
-        <p class="hint center" id="startHint"></p>
+        <p class="hint center" id="startHint" role="status"></p>
       </div>
       <p class="muted center" id="guestWait" data-i18n="lobby.guestWait" hidden>Waiting for the host to start the game.</p>
     </section>
@@ -593,6 +623,19 @@
       'lobby.hintReady': 'Connected: {n}. Start when everyone is in.',
       'lobby.remove': 'Remove',
       'lobby.removeAria': 'Remove {name}',
+
+      'roles.title': 'Role Settings',
+      'roles.hostIntro': 'Choose exactly how many of each role to deal. The roles are shuffled at random when the game starts.',
+      'roles.guestIntro': 'The host chooses the roles. Changes appear here live.',
+      'roles.total': 'Total Roles Set: {roles} / Total Players in Lobby: {players}',
+      'roles.auto': 'Auto-Balance',
+      'roles.modeAuto': 'Balanced automatically for the number of players.',
+      'roles.modeCustom': 'Custom setup chosen by the host.',
+      'roles.dec': 'Decrease {role}',
+      'roles.inc': 'Increase {role}',
+      'roles.err.mismatch': 'Role count must match total players in room!',
+      'roles.err.noMafia': 'At least one Mafia is required to start.',
+      'roles.err.mafiaMajority': 'Mafia must be outnumbered by the other roles, or the game would end at once.',
 
       'room.chip': 'Room {code}',
       'phase.lobby': 'Lobby',
@@ -780,6 +823,19 @@
       'lobby.remove': 'Убрать',
       'lobby.removeAria': 'Убрать игрока {name}',
 
+      'roles.title': 'Настройка ролей',
+      'roles.hostIntro': 'Задайте, сколько карт каждой роли раздать. При старте роли перемешиваются случайным образом.',
+      'roles.guestIntro': 'Роли выбирает хост. Изменения появляются здесь сразу.',
+      'roles.total': 'Всего ролей: {roles} / Игроков в лобби: {players}',
+      'roles.auto': 'Авто-баланс',
+      'roles.modeAuto': 'Роли подобраны автоматически под число игроков.',
+      'roles.modeCustom': 'Настройка задана хостом вручную.',
+      'roles.dec': 'Уменьшить: {role}',
+      'roles.inc': 'Увеличить: {role}',
+      'roles.err.mismatch': 'Число ролей должно совпадать с числом игроков в комнате!',
+      'roles.err.noMafia': 'Для старта нужна хотя бы одна Мафия.',
+      'roles.err.mafiaMajority': 'Мафии должно быть меньше, чем остальных ролей, иначе игра закончится сразу.',
+
       'room.chip': 'Комната {code}',
       'phase.lobby': 'Лобби',
       'phase.night': 'Ночь {n}',
@@ -954,6 +1010,12 @@
       'srv.voteSelf': 'Нельзя голосовать за себя.',
       'srv.notOver': 'Игра ещё не закончена.',
       'srv.rateLimit': 'Слишком часто. Помедленнее.',
+      'srv.rolesMismatch': 'Число ролей должно совпадать с числом игроков в комнате!',
+      'srv.noMafia': 'Нужна хотя бы одна Мафия.',
+      'srv.mafiaMajority': 'Мафии должно быть меньше, чем остальных ролей.',
+      'srv.rolesLobbyOnly': 'Роли можно менять только в лобби.',
+      'srv.rolesMissing': 'Не указаны настройки ролей.',
+      'srv.roleCounts': 'Число ролей должно быть целым числом от 0 до {n}.',
       'srv.internal': 'Внутренняя ошибка сервера.',
     },
   };
@@ -991,6 +1053,11 @@
     'You cannot vote for yourself.': 'srv.voteSelf',
     'The game is not over yet.': 'srv.notOver',
     'You are doing that too fast. Slow down.': 'srv.rateLimit',
+    'Role count must match total players in room!': 'srv.rolesMismatch',
+    'At least one Mafia is required.': 'srv.noMafia',
+    'Mafia must be outnumbered by the other roles.': 'srv.mafiaMajority',
+    'Roles can only be changed in the lobby.': 'srv.rolesLobbyOnly',
+    'Role settings are missing.': 'srv.rolesMissing',
     'Internal server error.': 'srv.internal',
   };
 
@@ -1017,6 +1084,13 @@
   const MIN_NAME = 2;
   const MAX_NAME = 16;
   const IN_GAME = new Set(['night', 'day', 'voting']);
+  /** Order of the role counters (also the keys of the `roles` payload sent to the server). */
+  const ROLE_ORDER = ['Mafia', 'Detective', 'Doctor', 'Townsperson'];
+
+  /* Host edits to the role counts are batched briefly; while any are pending or unacknowledged,
+     incoming role settings must not overwrite the host's local numbers. */
+  let roleSendTimer = null;
+  let roleInFlight = 0;
 
   const NIGHT_ACTIONS = {
     Mafia: { accent: 'var(--mafia)', targets: (me, p) => p.alive && p.role !== 'Mafia' },
@@ -1071,6 +1145,8 @@
     if (m) return t('srv.nameShort', { n: m[1] });
     m = message.match(/^At least (\d+) connected players are required to start\.$/);
     if (m) return t('srv.needPlayers', { n: m[1] });
+    m = message.match(/^Role counts must be whole numbers from 0 to (\d+)\.$/);
+    if (m) return t('srv.roleCounts', { n: m[1] });
     if (/^That (target|suspect) is not a living player\.$/.test(message)) return t('srv.notLiving');
     return message;
   }
@@ -1352,9 +1428,126 @@
     const connected = state.players.filter((p) => p.connected).length;
     $('hostControls').hidden = !me.isHost;
     $('guestWait').hidden = me.isHost;
-    $('startHint').textContent = connected >= state.minPlayers
-      ? t('lobby.hintReady', { n: connected })
-      : t('lobby.hintWaiting', { min: state.minPlayers, n: connected });
+
+    renderRoleSettings();
+
+    // Start is only possible when the role setup is valid; the reason is always shown.
+    const problem = currentRoleProblem();
+    $('startBtn').disabled = !!problem;
+    const hint = $('startHint');
+    hint.classList.toggle('start-error', !!problem && problem !== 'minPlayers');
+    if (problem === 'minPlayers') hint.textContent = t('lobby.hintWaiting', { min: state.minPlayers, n: connected });
+    else if (problem) hint.textContent = t(`roles.err.${problem}`);
+    else hint.textContent = t('lobby.hintReady', { n: connected });
+  }
+
+  /* ── Lobby: role settings (host edits, everyone sees them live) ── */
+  const sumCounts = (counts) => ROLE_ORDER.reduce((sum, role) => sum + (counts[role] || 0), 0);
+
+  /** Mirrors the server's checks; the server stays the authority when the game actually starts. */
+  function roleProblem(counts, connected, minPlayers) {
+    if (connected < minPlayers) return 'minPlayers';
+    const total = sumCounts(counts);
+    if (total !== connected) return 'mismatch';
+    if (counts.Mafia < 1) return 'noMafia';
+    if (counts.Mafia >= total - counts.Mafia) return 'mafiaMajority';
+    return null;
+  }
+
+  function currentRoleProblem() {
+    const rs = state && state.roleSettings;
+    if (!rs) return null;
+    return roleProblem(rs.counts, state.players.filter((p) => p.connected).length, state.minPlayers);
+  }
+
+  const rolesLocked = () => roleSendTimer !== null || roleInFlight > 0;
+
+  /** While the host is mid-edit the local numbers win, so a late echo can't make them jump back. */
+  function incomingRoleSettings(next) {
+    if (rolesLocked() && state && state.roleSettings) {
+      return { ...next, counts: state.roleSettings.counts, custom: state.roleSettings.custom };
+    }
+    return next;
+  }
+
+  function onRoleUpdateAck(res) {
+    roleInFlight = Math.max(0, roleInFlight - 1);
+    if (res && res.ok) {
+      if (!rolesLocked() && state && state.roleSettings) { state.roleSettings = res.roles; render(); }
+    } else {
+      send('request_state', {}); // the server rejected it: fall back to the server's numbers
+    }
+  }
+
+  function queueRoleUpdate() {
+    clearTimeout(roleSendTimer);
+    roleSendTimer = setTimeout(() => {
+      roleSendTimer = null;
+      if (!state || !state.roleSettings) return;
+      roleInFlight += 1;
+      send('update_roles', { roles: { ...state.roleSettings.counts } }, onRoleUpdateAck);
+    }, 90);
+  }
+
+  function stepRole(role, delta) {
+    const rs = state && state.roleSettings;
+    if (!rs || !state.you.isHost) return;
+    const value = Math.max(0, Math.min(state.maxPlayers, rs.counts[role] + delta));
+    if (value === rs.counts[role]) return;
+    state.roleSettings = { ...rs, counts: { ...rs.counts, [role]: value }, custom: true };
+    render();
+    queueRoleUpdate();
+  }
+
+  function autoBalance() {
+    if (!state || !state.you.isHost) return;
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    roleInFlight += 1;
+    send('update_roles', { auto: true }, onRoleUpdateAck);
+  }
+
+  function renderRoleSettings() {
+    const rs = state.roleSettings;
+    $('roleSettings').hidden = !rs;
+    if (!rs) return;
+
+    const isHost = state.you.isHost;
+    const connected = state.players.filter((p) => p.connected).length;
+    const total = sumCounts(rs.counts);
+
+    $('roleIntro').textContent = t(isHost ? 'roles.hostIntro' : 'roles.guestIntro');
+
+    $('roleList').replaceChildren(...ROLE_ORDER.map((role) => {
+      const value = rs.counts[role];
+      const control = isHost
+        ? el('div', { class: 'stepper' },
+            el('button', {
+              class: 'btn stepper-btn', type: 'button', disabled: value <= 0,
+              'aria-label': t('roles.dec', { role: roleName(role) }),
+              onclick: () => stepRole(role, -1),
+            }, '\u2212'),
+            el('span', { class: 'stepper-value', 'aria-live': 'polite', text: String(value) }),
+            el('button', {
+              class: 'btn stepper-btn', type: 'button', disabled: value >= state.maxPlayers,
+              'aria-label': t('roles.inc', { role: roleName(role) }),
+              onclick: () => stepRole(role, 1),
+            }, '+'))
+        : el('span', { class: 'role-count', text: String(value) });
+      return el('li', { class: 'role-row', 'data-role': role },
+        el('span', { class: 'role-swatch', 'aria-hidden': 'true' }),
+        el('span', { class: 'role-name', text: roleName(role) }),
+        control);
+    }));
+
+    const totalEl = $('roleTotal');
+    totalEl.textContent = t('roles.total', { roles: total, players: connected });
+    totalEl.classList.toggle('ok', total === connected && connected > 0);
+    totalEl.classList.toggle('bad', total !== connected);
+
+    $('roleMode').textContent = t(rs.custom ? 'roles.modeCustom' : 'roles.modeAuto');
+    $('roleAutoBtn').hidden = !isHost;
+    $('roleAutoBtn').disabled = !rs.custom;
   }
 
   /* ── Screen 3: Role card ── */
@@ -1651,6 +1844,9 @@
 
   function resetToJoinScreen() {
     store.del('mafia.session');
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    roleInFlight = 0;
     state = null;
     ui.showRoleCard = false;
     ui.roleRevealed = false;
@@ -1740,13 +1936,22 @@
 
   $('startBtn').addEventListener('click', () => {
     if (!state) return;
-    const connected = state.players.filter((p) => p.connected).length;
-    if (connected < state.minPlayers) {
-      toast(t('err.needPlayers', { min: state.minPlayers, n: connected }));
+    const problem = currentRoleProblem();
+    if (problem) { // the button is normally disabled; this guards against stale clicks
+      const connected = state.players.filter((p) => p.connected).length;
+      toast(problem === 'minPlayers'
+        ? t('err.needPlayers', { min: state.minPlayers, n: connected })
+        : t(`roles.err.${problem}`));
       return;
     }
-    send('start_game', {});
+    // With a hand-made setup, send the counts along so the start can never race an unsent edit.
+    const rs = state.roleSettings;
+    const payload = rs && rs.custom ? { roles: { ...rs.counts } } : {};
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    send('start_game', payload);
   });
+  $('roleAutoBtn').addEventListener('click', autoBalance);
 
   $('advanceBtn').addEventListener('click', () => send('advance_phase', {}));
   $('skipVoteBtn').addEventListener('click', () => castVote(null));
@@ -1799,7 +2004,15 @@
       renderChatMessages();
     }
     ui.prevPhase = s.phase;
+    if (s.roleSettings) s.roleSettings = incomingRoleSettings(s.roleSettings);
     state = s;
+    render();
+  });
+
+  // Live sync: the host's role counters reach everyone in the lobby as they change.
+  socket.on('roles_updated', (settings) => {
+    if (!state || state.phase !== 'lobby') return;
+    state.roleSettings = incomingRoleSettings(settings);
     render();
   });
 
