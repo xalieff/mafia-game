@@ -4,7 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0E1120">
+
+<!-- Progressive Web App -->
+<meta name="theme-color" content="#121212">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mafia">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+
 <title>Mafia</title>
 <style>
   /* ───────────────────────────── Tokens ───────────────────────────── */
@@ -49,7 +59,8 @@
   /* ───────────────────────────── Base ───────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  html { color-scheme: dark; -webkit-text-size-adjust: 100%; }
+  html { color-scheme: dark; -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
+  button, summary, .lang-btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   body {
     margin: 0;
     min-height: 100vh;
@@ -76,6 +87,9 @@
     padding: 0 16px calc(32px + env(safe-area-inset-bottom));
   }
   main { display: grid; gap: 16px; padding-top: 16px; }
+  /* Installed on iOS, the translucent status bar overlays the page: keep the join screen clear of it.
+     (In a room, the sticky top bar already adds the safe-area inset itself.) */
+  body[data-phase="none"] main { padding-top: calc(16px + env(safe-area-inset-top)); }
   .screen { display: grid; gap: 16px; }
   #screen-join { padding-top: 28px; }
   .muted { color: var(--muted); }
@@ -509,6 +523,22 @@
 <script>
 (() => {
   'use strict';
+
+  /* The Socket.io client script is deliberately never cached by the service worker.
+     If the installed app is opened offline, it is missing: explain that and retry when back online. */
+  if (typeof io === 'undefined') {
+    let savedLang = '';
+    try { savedLang = localStorage.getItem('mafia.lang') || ''; } catch { /* storage blocked */ }
+    const banner = document.getElementById('conn');
+    if (banner) {
+      banner.textContent = savedLang === 'ru'
+        ? 'Нет соединения. Подключитесь к интернету, чтобы играть.'
+        : 'You are offline. Connect to the internet to play.';
+      banner.hidden = false;
+    }
+    window.addEventListener('online', () => location.reload());
+    return;
+  }
 
   /* ══════════════════════════════════════════════════════════════════════
      Translations
@@ -1889,6 +1919,17 @@
   render();
   (codeInput.value && nameInput.value ? $('joinBtn') : nameInput).focus({ preventScroll: true });
 })();
+</script>
+
+<!-- PWA: register the service worker once the page has loaded -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+  }
 </script>
 </body>
 </html>
