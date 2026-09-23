@@ -13,29 +13,33 @@
  *   join_room      { code, name?, playerId? }   → { ok, code, playerId, reconnected }
  *   leave_room     {}
  *   kick_player    { playerId }                 (host, lobby only)
- *   update_roles   { roles } | { auto: true }   (host, lobby only) roles = { Mafia, Detective, Doctor, Townsperson } counts
+ *   update_roles   { roles } | { auto: true }   (host, lobby only) roles = { Mafia, Detective, Doctor, Kamikaze, Townsperson } counts
  *   start_game     { roles? }                   (host, lobby only; optional roles are applied first)
  *   night_action   { targetId }                 (Mafia / Doctor / Detective)
  *   advance_phase  {}                           (host, skips day discussion)
  *   cast_vote      { targetId | null }          (null = skip / no elimination)
+ *   kamikaze_detonate { targetId }               (Kamikaze, alive, day phase only: expose + kill self + target)
+ *   kamikaze_revenge  { targetId | null }        (Kamikaze, once eliminated by Mafia/vote: null = skip the revenge kill)
  *   chat_message   { text }
  *   play_again     {}                           (host, after game over)
  *   request_state  {}                           (re-sends `room_state`)
  *
  * SERVER → CLIENT EVENTS
  *   room_state             personalised snapshot (role/teammates only when allowed;
- *                          in the lobby it carries `roleSettings` for everyone)
+ *                          in the lobby it carries `roleSettings` for everyone;
+ *                          `you.kamikazeRevenge` carries a pending revenge deadline)
  *   roles_updated          { counts, custom, total, connected, problem }  (lobby, whole room, live sync)
  *   role_assigned          { role, teammates }                (private)
  *   game_started           { playerCount, mafiaCount, roles }
  *   phase_changed          { phase, day, endsAt, serverTime }
  *   day_event              { day, text, killed }              (night results)
- *   player_eliminated      { id, name, role, cause, day }
+ *   player_eliminated      { id, name, role, cause, day }      (cause also: 'kamikaze' | 'kamikaze_self')
  *   investigation_result   { targetId, targetName, result }   (Detective only)
  *   night_action_confirmed { role, targetId }                 (actor only)
  *   mafia_picks            { picks: [{ mafiaId, targetId }] } (Mafia team only)
  *   vote_update            { counts, skip, voted, total }
  *   vote_result            { eliminated, reason, text, counts, skip, votes }
+ *   kamikaze_detonated     { by, target, mode: 'active' | 'passive', day } (whole room, live)
  *   game_over              { winner, text, players }
  *   chat_message           { id, from, text, channel, ts }
  *   announcement           { text, type, ts }
@@ -72,6 +76,7 @@ const CFG = Object.freeze({
   nightMs: envSeconds('NIGHT_SECONDS', 60),
   dayMs: envSeconds('DAY_SECONDS', 90),
   voteMs: envSeconds('VOTE_SECONDS', 45),
+  kamikazeMs: envSeconds('KAMIKAZE_SECONDS', 20), // window to pick a revenge target after dying
   lobbyGraceMs: 20_000, // how long a disconnected lobby player is kept
   emptyRoomTtlMs: 5 * 60_000, // how long a room with nobody connected survives
   rateBurst: 20, // per-socket token bucket
@@ -90,12 +95,13 @@ const ROLE = Object.freeze({
   MAFIA: 'Mafia',
   DOCTOR: 'Doctor',
   DETECTIVE: 'Detective',
+  KAMIKAZE: 'Kamikaze', // neutral: revenge-kills on death, or self-detonates by day
   TOWN: 'Townsperson',
 });
 
 const NIGHT_ROLES = new Set([ROLE.MAFIA, ROLE.DOCTOR, ROLE.DETECTIVE]);
 /** Display order of the role counters (also the keys of the `roles` payload). */
-const ROLE_ORDER = Object.freeze([ROLE.MAFIA, ROLE.DETECTIVE, ROLE.DOCTOR, ROLE.TOWN]);
+const ROLE_ORDER = Object.freeze([ROLE.MAFIA, ROLE.DETECTIVE, ROLE.DOCTOR, ROLE.KAMIKAZE, ROLE.TOWN]);
 const SKIP = 'skip';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 const CODE_REGEX = /^[A-Z0-9]{4}$/;
@@ -202,6 +208,8 @@ function cleanChat(raw) {
  *           each map is actorId → targetId, so several Doctors / Detectives can act in one night
  * @property {Object|null} roleConfig   host's custom role counts (null while auto-balancing)
  * @property {boolean} rolesCustom      true once the host has set the counts by hand
+ * @property {Map<string,{deadline:number,timer:NodeJS.Timeout}>} kamikazePending
+ *           eliminated Kamikazes currently choosing a revenge target
  * @property {Map<string,string>} votes  voterId → targetId | SKIP
  * @property {string|null} winner
  * @property {Array} log
@@ -229,6 +237,7 @@ function createRoom(code) {
     roleConfig: null,
     rolesCustom: false,
     votes: new Map(),
+    kamikazePending: new Map(), // playerId → { deadline, timer } (revenge window after a passive death)
     winner: null,
     log: [],
     cleanupTimer: null,
@@ -290,6 +299,7 @@ function defaultRoleConfig(playerCount) {
     [ROLE.MAFIA]: mafia,
     [ROLE.DETECTIVE]: detective,
     [ROLE.DOCTOR]: doctor,
+    [ROLE.KAMIKAZE]: 0, // neutral role: only dealt when the host asks for it
     [ROLE.TOWN]: rest - doctor - detective,
   };
 }
@@ -436,6 +446,9 @@ function stateFor(room, viewer) {
               .map(publicPlayer)
           : [],
       investigations: viewer.role === ROLE.DETECTIVE ? viewer.investigations : [],
+      kamikazeRevenge: room.kamikazePending.has(viewer.id)
+        ? { deadline: room.kamikazePending.get(viewer.id).deadline }
+        : null,
     },
     night: null,
     vote: null,
@@ -502,6 +515,7 @@ function destroyRoom(room) {
   clearPhaseTimer(room);
   clearTimeout(room.cleanupTimer);
   for (const p of room.players.values()) clearTimeout(p.disconnectTimer);
+  for (const id of [...room.kamikazePending.keys()]) clearKamikazePending(room, id);
   rooms.delete(room.code);
   console.log(`[room ${room.code}] destroyed (${rooms.size} rooms active)`);
 }
@@ -552,6 +566,7 @@ function attachSocket(socket, room, player) {
 
 function removePlayer(room, player) {
   clearTimeout(player.disconnectTimer);
+  clearKamikazePending(room, player.id);
   room.players.delete(player.id);
   detachSocket(player.socketId, room.code);
   player.socketId = null;
@@ -664,6 +679,38 @@ function eliminate(room, player, cause) {
   return info;
 }
 
+/* ───────────────────────────── Kamikaze ───────────────────────────── */
+
+/** Stops and forgets a pending revenge window, wherever it came from (resolved, expired, or the player left). */
+function clearKamikazePending(room, playerId) {
+  const pending = room.kamikazePending.get(playerId);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  room.kamikazePending.delete(playerId);
+}
+
+/**
+ * Opens a Kamikaze's revenge window: for the next `CFG.kamikazeMs`, the player who was just
+ * eliminated by the Mafia or the town's vote may take one more living player down with them
+ * (`kamikaze_revenge`). This does not pause the game — night/day/voting keep moving on their own
+ * timers — the window simply lapses silently if it isn't used in time.
+ */
+function armKamikaze(room, player) {
+  const deadline = Date.now() + CFG.kamikazeMs;
+  const timer = setTimeout(() => {
+    room.kamikazePending.delete(player.id);
+    broadcastState(room);
+  }, CFG.kamikazeMs);
+  room.kamikazePending.set(player.id, { deadline, timer });
+}
+
+/** Broadcasts a detonation (self-destruct or revenge kill) as a room-wide announcement. */
+function announceKamikaze(room, by, target, mode) {
+  const text = `Kamikaze ${by.name} revealed themselves and took down ${target.name}!`;
+  addLog(room, text, 'kamikaze');
+  emitToRoom(room, 'kamikaze_detonated', { by: publicPlayer(by), target: publicPlayer(target), mode, day: room.day });
+}
+
 /** Night → Day: resolve Mafia kill vs. Doctor save, announce, check win. */
 function resolveNight(room) {
   if (room.phase !== PHASE.NIGHT) return;
@@ -683,6 +730,7 @@ function resolveNight(room) {
   emitToRoom(room, 'day_event', { day: room.day, text, killed });
 
   if (checkWin(room)) return;
+  if (killed && killed.role === ROLE.KAMIKAZE) armKamikaze(room, killed);
   schedulePhaseTimer(room, CFG.dayMs, beginVoting);
   emitPhaseChanged(room);
   broadcastState(room);
@@ -736,6 +784,7 @@ function resolveVote(room) {
   }
 
   let eliminated = null;
+  let votedOut = null;
   let reason;
   let text;
   if (leaders.length === 0) {
@@ -749,7 +798,8 @@ function resolveVote(room) {
     text = 'The town chose not to eliminate anyone.';
   } else {
     reason = 'majority';
-    eliminated = eliminate(room, room.players.get(leaders[0]), 'vote');
+    votedOut = room.players.get(leaders[0]);
+    eliminated = eliminate(room, votedOut, 'vote');
     text = `${eliminated.name} was voted out by the town. They were the ${eliminated.role}.`;
   }
 
@@ -764,6 +814,7 @@ function resolveVote(room) {
   emitToRoom(room, 'vote_result', { eliminated, reason, text, counts: voteCounts, skip, votes });
 
   if (checkWin(room)) return;
+  if (votedOut && votedOut.role === ROLE.KAMIKAZE) armKamikaze(room, votedOut);
   beginNight(room);
 }
 
@@ -784,6 +835,7 @@ function checkWin(room) {
 
 function endGame(room, winner) {
   clearPhaseTimer(room);
+  for (const id of [...room.kamikazePending.keys()]) clearKamikazePending(room, id);
   room.phase = PHASE.ENDED;
   room.winner = winner;
 
@@ -810,6 +862,7 @@ function endGame(room, winner) {
 
 function resetToLobby(room) {
   clearPhaseTimer(room);
+  for (const id of [...room.kamikazePending.keys()]) clearKamikazePending(room, id);
   for (const p of allPlayers(room)) {
     if (p.left || !p.connected) {
       clearTimeout(p.disconnectTimer);
@@ -852,6 +905,7 @@ function leavePlayer(room, player) {
   room.night.doctorSaves.delete(player.id);
   room.night.detectiveTargets.delete(player.id);
   room.votes.delete(player.id);
+  clearKamikazePending(room, player.id);
 
   if (player.alive) {
     const info = eliminate(room, player, 'left');
@@ -1163,6 +1217,47 @@ io.on('connection', (socket) => {
     emitToRoom(room, 'vote_update', voteSnapshot(room));
     checkVotingComplete(room);
     return { targetId: choice === SKIP ? null : choice };
+  });
+
+  /** Active trigger: the Kamikaze exposes themselves by day, killing themselves and one target. */
+  handle(socket, 'kamikaze_detonate', (data) => {
+    const { room, player } = requireContext(socket);
+    if (room.phase !== PHASE.DAY) throw new GameError('You can only detonate during the day.');
+    if (!player.alive) throw new GameError('Dead players cannot act.');
+    if (player.role !== ROLE.KAMIKAZE) throw new GameError('Only the Kamikaze can detonate.');
+
+    const target = requireAlivePlayer(room, data.targetId);
+    if (target.id === player.id) throw new GameError('You cannot target yourself.');
+
+    eliminate(room, player, 'kamikaze_self');
+    eliminate(room, target, 'kamikaze');
+    announceKamikaze(room, player, target, 'active');
+
+    if (checkWin(room)) return { targetId: target.id };
+    broadcastState(room);
+    return { targetId: target.id };
+  });
+
+  /** Passive trigger: an eliminated Kamikaze spends their revenge window on one living player. */
+  handle(socket, 'kamikaze_revenge', (data) => {
+    const { room, player } = requireContext(socket);
+    const pending = room.kamikazePending.get(player.id);
+    if (!pending) throw new GameError('You have no revenge action available.');
+
+    clearKamikazePending(room, player.id);
+
+    if (data.targetId === null || data.targetId === undefined || data.targetId === SKIP) {
+      broadcastState(room); // just clears this player's own revenge panel for everyone watching their state
+      return { targetId: null };
+    }
+
+    const target = requireAlivePlayer(room, data.targetId);
+    eliminate(room, target, 'kamikaze');
+    announceKamikaze(room, player, target, 'passive');
+
+    if (checkWin(room)) return { targetId: target.id };
+    broadcastState(room);
+    return { targetId: target.id };
   });
 
   handle(socket, 'play_again', () => {
