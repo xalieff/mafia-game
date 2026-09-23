@@ -1493,1120 +1493,1040 @@
   }
 
   function updateUrl(code) {
-    try {
-      history.replaceState({}, '', code ? `?room=${encodeURIComponent(code)}` : location.pathname);
-    } catch { /* ignored */ }
+    try { history.replaceState(null, '', code ? `/room/${code}` : '/'); } catch { /* e.g. file:// */ }
   }
 
-  function readUrlCode() {
-    try {
-      const match = location.search.match(/[?&]room=([A-Za-z0-9]{4})\b/);
-      return match ? match[1].toUpperCase() : '';
-    } catch { return ''; }
+  function codeFromUrl() {
+    const m = location.pathname.match(/^\/room\/([A-Za-z0-9]{4})\/?$/);
+    if (m) return m[1].toUpperCase();
+    const q = new URLSearchParams(location.search).get('room');
+    return q && /^[A-Za-z0-9]{4}$/.test(q) ? q.toUpperCase() : '';
   }
 
-  /* ══════════════════════════ Modal system ══════════════════════════ */
+  /**
+   * Room codes are Latin letters and digits. If a player types with the Russian
+   * keyboard layout, map each Cyrillic letter to the Latin key in the same position.
+   */
+  const RU_TO_LATIN = {
+    'й': 'Q', 'ц': 'W', 'у': 'E', 'к': 'R', 'е': 'T', 'н': 'Y', 'г': 'U', 'ш': 'I', 'щ': 'O', 'з': 'P',
+    'ф': 'A', 'ы': 'S', 'в': 'D', 'а': 'F', 'п': 'G', 'р': 'H', 'о': 'J', 'л': 'K', 'д': 'L',
+    'я': 'Z', 'ч': 'X', 'с': 'C', 'м': 'V', 'и': 'B', 'т': 'N', 'ь': 'M',
+  };
+  function normalizeCode(raw) {
+    return Array.from(String(raw).toLowerCase())
+      .map((ch) => RU_TO_LATIN[ch] ?? ch.toUpperCase())
+      .join('')
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 4);
+  }
 
+  /** Emit with ack, timeout and uniform (translated) error display. */
+  function send(event, data, done) {
+    if (!socket.connected) {
+      toast(t('err.notConnected'));
+      if (done) done(null);
+      return;
+    }
+    socket.timeout(8000).emit(event, data, (err, res) => {
+      if (err) {
+        toast(t('err.timeout'));
+        if (done) done(null);
+        return;
+      }
+      if (!res || !res.ok) toast(translateServerError(res && res.error) || t('err.generic'));
+      if (done) done(res);
+    });
+  }
+
+  function lastLogText(type) {
+    const entry = [...(state?.log ?? [])].reverse().find((l) => l.type === type);
+    return entry ? entry.text : '';
+  }
+
+  /**
+   * After a reconnect the client only has the English log line for last night.
+   * Extract its data so it can be shown in the active language.
+   */
+  function parseNightLog() {
+    const line = lastLogText('night_result');
+    if (!line) return null;
+    const body = line.replace(/^Day \d+ begins\.\s*/, '');
+    const m = body.match(/^(.+) was killed by the Mafia during the night\. They were the (.+)\.$/);
+    if (m) return { killed: { name: m[1], role: m[2] } };
+    if (/no one died last night/.test(body)) return { killed: null };
+    return null;
+  }
+
+  const nightResultText = (killed) => (killed
+    ? t('night.killed', { name: killed.name, role: roleName(killed.role) })
+    : t('night.peaceful'));
+
+  function voteResultText(e) {
+    switch (e.reason) {
+      case 'majority':
+        return t('voteRes.majority', { name: e.eliminated.name, role: roleName(e.eliminated.role) });
+      case 'tie': return t('voteRes.tie');
+      case 'skip': return t('voteRes.skip');
+      default: return t('voteRes.noVotes');
+    }
+  }
+
+  /* ══════════════════════════ Modal queue ══════════════════════════ */
+
+  const modal = $('modal');
+  const modalQueue = [];
   let currentModal = null;
 
-  function modalIsOpen() {
-    const dialog = $('modal');
-    return dialog && dialog.open;
+  function modalIsOpen() { return modal.hasAttribute('open'); }
+
+  /** `title`, `body` and `ok` are functions so an open popup can be re-rendered on language change. */
+  function showModal(descriptor) {
+    modalQueue.push(descriptor);
+    if (!modalIsOpen()) nextModal();
   }
 
-  function closeModal() {
-    const dialog = $('modal');
-    if (dialog && dialog.open) dialog.close();
-    currentModal = null;
+  function fillModal(m) {
+    $('modalTitle').textContent = m.title();
+    $('modalBody').replaceChildren(...[].concat(m.body()));
+    $('modalOk').textContent = m.ok ? m.ok() : t('modal.ok');
+    modal.dataset.tone = m.tone || '';
   }
 
-  function fillModal(data) {
-    const dialog = $('modal');
-    dialog.dataset.tone = data.tone || 'neutral';
-    $('modalTitle').textContent = data.title;
-    const body = $('modalBody');
-    body.replaceChildren();
-
-    if (data.kind === 'eliminated') {
-      const p1 = el('p', { class: 'modal-big ' + (data.killedByMafia ? 'mafia' : 'town'), text: data.bodyText });
-      const p2 = el('p', { class: 'muted', text: t('elim.note') });
-      body.append(p1, p2);
-      $('modalOk').textContent = t('elim.keep');
-    } else if (data.kind === 'investigation') {
-      const resultClass = data.isMafia ? 'mafia' : 'town';
-      const resultText = data.isMafia ? t('inv.mafia', { name: data.targetName }) : t('inv.town', { name: data.targetName });
-      const subText = data.isMafia ? t('inv.subMafia') : t('inv.subTown');
-      const p1 = el('p', { class: `modal-big ${resultClass}`, text: resultText });
-      const p2 = el('p', { class: 'muted', text: subText });
-      body.append(p1, p2);
-      $('modalOk').textContent = t('modal.ok');
-    } else if (data.kind === 'vote_result') {
-      const p1 = el('p', { class: 'modal-big', text: data.mainText });
-      body.append(p1);
-      if (data.votes && data.votes.length > 0) {
-        const voteList = el('div', { class: 'vote-details' });
-        for (const v of data.votes) {
-          const voterName = v.voterName || 'Someone';
-          const targetText = v.targetName ? t('vote.for') + v.targetName : t('vote.skipped');
-          voteList.append(el('div', { class: 'vote-line', text: voterName + targetText }));
-        }
-        body.append(voteList);
-      }
-      $('modalOk').textContent = t('modal.ok');
-    }
+  function nextModal() {
+    const m = modalQueue.shift();
+    currentModal = m || null;
+    if (!m) return;
+    fillModal(m);
+    if (typeof modal.showModal === 'function') modal.showModal();
+    else modal.setAttribute('open', '');
+    $('modalOk').focus();
   }
 
-  function showModal(data) {
-    currentModal = data;
-    fillModal(data);
-    const dialog = $('modal');
-    if (!dialog.open) {
-      try { dialog.showModal(); } catch { dialog.open = true; }
-    }
+  $('modalOk').addEventListener('click', () => {
+    if (typeof modal.close === 'function') modal.close();
+    else { modal.removeAttribute('open'); nextModal(); }
+  });
+  modal.addEventListener('close', nextModal);
+
+  /* ══════════════════════════ Reusable row builders ══════════════════════════ */
+
+  function avatar(name) {
+    let hue = 0;
+    for (const ch of name) hue = (hue * 31 + ch.codePointAt(0)) % 360;
+    return el('span', {
+      class: 'avatar', 'aria-hidden': 'true',
+      style: `background:hsl(${hue} 38% 28%);color:hsl(${hue} 80% 86%)`,
+    }, (Array.from(name)[0] || '?').toUpperCase());
   }
 
-  $('modalOk').addEventListener('click', closeModal);
+  const tag = (text, kind = '') => el('span', { class: `tag ${kind}`.trim(), text });
 
-  /* ══════════════════════════ Phase overlay ══════════════════════════ */
-
-  let overlayTimer = null;
-
-  function showPhaseOverlay(kind, payload) {
-    const overlay = $('phaseOverlay');
-    const announcer = $('phaseAnnouncer');
-    if (!overlay) return;
-
-    if (overlayTimer) {
-      clearTimeout(overlayTimer);
-      overlayTimer = null;
-    }
-
-    overlay.dataset.kind = kind;
-    overlay.replaceChildren();
-
-    const template = $(`tpl-po-${kind}`);
-    if (template) overlay.append(template.content.cloneNode(true));
-
-    let titleText = '';
-    let subText = '';
-
-    if (kind === 'night') {
-      titleText = t('phase.fx.night');
-      subText = t('phase.fx.nightSub', { n: payload.day || 1 });
-    } else if (kind === 'day') {
-      titleText = t('phase.fx.day');
-      subText = t('phase.fx.daySub', { n: payload.day || 1 });
-    } else if (kind === 'voting') {
-      titleText = t('phase.fx.voting');
-      subText = t('phase.fx.votingSub');
-    }
-
-    const copyNode = el('div', { class: 'po-copy' },
-      el('h2', { class: 'po-title', text: titleText }),
-      el('p', { class: 'po-sub', text: subText })
-    );
-
-    const stage = el('div', { class: 'po-stage' });
-    const hero = overlay.querySelector('.po-hero');
-    if (hero) {
-      hero.after(copyNode);
-    } else {
-      stage.append(copyNode);
-      overlay.append(stage);
-    }
-
-    if (announcer) announcer.textContent = `${titleText}. ${subText}`;
-
-    // Popover API support check
-    try {
-      if (typeof overlay.showPopover === 'function') overlay.showPopover();
-    } catch { /* ignored */ }
-
-    overlay.classList.remove('is-open');
-    void overlay.offsetWidth;
-    overlay.classList.add('is-open');
-
-    overlayTimer = setTimeout(() => {
-      overlay.classList.remove('is-open');
-      try {
-        if (typeof overlay.hidePopover === 'function') overlay.hidePopover();
-      } catch { /* ignored */ }
-      overlayTimer = null;
-    }, 2800);
+  function roleTag(role) {
+    return el('span', { class: 'tag', 'data-role': role, text: roleName(role) });
   }
 
-  function refreshOverlayText() {
-    const overlay = $('phaseOverlay');
-    if (!overlay || !overlay.classList.contains('is-open')) return;
-    const kind = overlay.dataset.kind;
-    const titleEl = overlay.querySelector('.po-title');
-    const subEl = overlay.querySelector('.po-sub');
-    if (!titleEl || !subEl) return;
-
-    const currentDay = state ? state.day : 1;
-    if (kind === 'night') {
-      titleEl.textContent = t('phase.fx.night');
-      subEl.textContent = t('phase.fx.nightSub', { n: currentDay });
-    } else if (kind === 'day') {
-      titleEl.textContent = t('phase.fx.day');
-      subEl.textContent = t('phase.fx.daySub', { n: currentDay });
-    } else if (kind === 'voting') {
-      titleEl.textContent = t('phase.fx.voting');
-      subEl.textContent = t('phase.fx.votingSub');
-    }
+  function playerRow(p, { tags = [], sub = null, button = null } = {}) {
+    return el('li', { class: `row${p.alive === false ? ' out' : ''}` },
+      avatar(p.name),
+      el('div', { class: 'row-main' },
+        el('span', { class: 'row-name', text: p.name }),
+        sub ? el('span', { class: 'row-sub', text: sub }) : null),
+      el('div', { class: 'row-tags' }, tags),
+      button);
   }
 
-  /* ══════════════════════════ Server events ══════════════════════════ */
+  function pickButton({ label, pressed, disabled, onClick, accent }) {
+    return el('button', {
+      class: 'btn btn-sm pick', type: 'button',
+      'aria-pressed': String(!!pressed), disabled: !!disabled,
+      style: accent ? `--accent:${accent}` : false, onclick: onClick,
+    }, label);
+  }
 
-  socket.on('connect', () => {
-    $('conn').hidden = true;
-    const creds = store.get('mafia.creds');
-    if (creds && creds.roomCode && creds.playerId) {
-      socket.emit('rejoin_room', creds, (res) => {
-        if (!res || !res.ok) {
-          store.del('mafia.creds');
-          state = null;
-          updateUrl('');
-          render();
-          if (res && res.error) {
-            toast(t('toast.rejoinFailWhy', { reason: translateServerError(res.error) }), 'info');
-          }
-        }
-      });
-    }
-  });
+  const nameOf = (id) => state?.players.find((p) => p.id === id)?.name ?? '?';
 
-  socket.on('disconnect', () => {
-    $('conn').hidden = false;
-  });
+  /* ══════════════════════════ Rendering ══════════════════════════ */
 
-  socket.on('room_state', (data) => {
-    if (data.serverTime) {
-      clockOffset = Date.now() - data.serverTime;
-    }
+  const SCREENS = ['join', 'lobby', 'role', 'night', 'day', 'over'];
 
-    const prevPhase = ui.prevPhase;
-    const newPhase = data.phase;
-    ui.prevPhase = newPhase;
-
-    state = data;
-
-    if (state.roomCode) {
-      store.set('mafia.creds', { roomCode: state.roomCode, playerId: state.me ? state.me.id : null });
-      updateUrl(state.roomCode);
-    }
-
-    // Trigger transition overlay on phase changes
-    if (prevPhase && prevPhase !== newPhase) {
-      if (newPhase === 'night') showPhaseOverlay('night', { day: data.day });
-      else if (newPhase === 'day') showPhaseOverlay('day', { day: data.day });
-      else if (newPhase === 'voting') showPhaseOverlay('voting', { day: data.day });
-    }
-
-    render();
-  });
-
-  socket.on('day_event', (evt) => {
-    ui.dayEvent = evt;
-    renderDayAnnounce();
-  });
-
-  socket.on('investigation_result', (res) => {
-    const me = state ? state.me : null;
-    if (me && me.notes) {
-      const existing = me.notes.find((n) => n.day === res.day && n.targetId === res.targetId);
-      if (!existing) {
-        me.notes.push(res);
-      }
-    }
-    showModal({
-      kind: 'investigation',
-      title: t('inv.title'),
-      targetName: res.targetName,
-      isMafia: res.isMafia,
-      tone: res.isMafia ? 'mafia' : 'town',
-    });
-    renderNotes();
-  });
-
-  socket.on('vote_result', (res) => {
-    let mainText = '';
-    let tone = 'neutral';
-
-    if (res.eliminated) {
-      mainText = t('voteRes.majority', { name: res.eliminated.name, role: roleName(res.eliminated.role) });
-      tone = res.eliminated.role === 'Mafia' ? 'town' : 'mafia';
-    } else if (res.reason === 'tie') {
-      mainText = t('voteRes.tie');
-    } else if (res.reason === 'skip') {
-      mainText = t('voteRes.skip');
-    } else {
-      mainText = t('voteRes.noVotes');
-    }
-
-    showModal({
-      kind: 'vote_result',
-      title: res.eliminated ? t('voteRes.eliminated') : t('voteRes.none'),
-      mainText: mainText,
-      votes: res.votes || [],
-      tone: tone,
-    });
-  });
-
-  socket.on('player_eliminated', (data) => {
-    const me = state ? state.me : null;
-    if (me && data.playerId === me.id) {
-      const isMafiaKill = data.reason === 'mafia';
-      showModal({
-        kind: 'eliminated',
-        title: t('elim.title'),
-        bodyText: isMafiaKill ? t('elim.mafia') : t('elim.vote'),
-        killedByMafia: isMafiaKill,
-        tone: 'mafia',
-      });
-    }
-  });
-
-  socket.on('chat_msg', (msg) => {
-    ui.chat.push(msg);
-    if (ui.chat.length > 100) ui.chat.shift();
-    renderChatMessages();
-  });
-
-  socket.on('kicked', () => {
-    store.del('mafia.creds');
-    state = null;
-    ui.chat = [];
-    updateUrl('');
-    toast(t('toast.kicked'), 'info');
-    render();
-  });
-
-  socket.on('replaced', () => {
-    ui.replaced = true;
-    store.del('mafia.creds');
-    state = null;
-    updateUrl('');
-    toast(t('toast.replaced'), 'info');
-    render();
-  });
-
-  /* ══════════════════════════ Navigation & rendering ══════════════════════════ */
+  function pickScreen() {
+    if (!state) return 'join';
+    if (state.phase === 'lobby') return 'lobby';
+    if (state.phase === 'ended') return 'over';
+    if (ui.showRoleCard && state.you.role) return 'role';
+    return state.phase === 'night' ? 'night' : 'day';
+  }
 
   function render() {
-    if (!state) {
-      document.body.dataset.phase = 'none';
-      delete document.body.dataset.winner;
-      $('topbar').hidden = true;
-      $('notes').hidden = true;
-      $('chat').hidden = true;
-      $('deadBanner').hidden = true;
-      showScreen('screen-join');
-      return;
-    }
-
-    const phase = state.phase;
+    const phase = state ? state.phase : 'none';
     document.body.dataset.phase = phase;
-    if (phase === 'ended' && state.winner) {
-      document.body.dataset.winner = state.winner;
-    } else {
-      delete document.body.dataset.winner;
+    document.body.dataset.winner = state && state.winner ? state.winner : '';
+
+    const screen = pickScreen();
+    for (const name of SCREENS) $(`screen-${name}`).hidden = name !== screen;
+
+    renderTopbar();
+    if (state) {
+      if (screen === 'lobby') renderLobby();
+      if (screen === 'role') renderRole();
+      if (screen === 'night') renderNight();
+      if (screen === 'day') renderDay();
+      if (screen === 'over') renderOver();
     }
-
-    $('topbar').hidden = false;
-    $('roomChip').textContent = state.roomCode;
-
-    renderTopBar();
-
-    const me = state.me;
-    const isDead = me && !me.alive;
-    $('deadBanner').hidden = !isDead || phase === 'ended';
-
-    if (ui.showRoleCard) {
-      showScreen('screen-role');
-      renderRoleCard();
-    } else if (phase === 'lobby') {
-      showScreen('screen-lobby');
-      renderLobby();
-    } else if (phase === 'night') {
-      showScreen('screen-night');
-      renderNight();
-    } else if (phase === 'day' || phase === 'voting') {
-      showScreen('screen-day');
-      renderDay();
-    } else if (phase === 'ended') {
-      showScreen('screen-over');
-      renderOver();
-    }
-
-    renderNotes();
-    renderChat();
+    renderDeadBanner(screen);
+    renderNotes(screen);
+    renderChat(screen);
+    tick();
   }
 
-  function showScreen(id) {
-    document.querySelectorAll('.screen').forEach((s) => {
-      s.hidden = s.id !== id;
+  function renderTopbar() {
+    $('topbar').hidden = !state;
+    if (!state) return;
+    $('roomChip').textContent = t('room.chip', { code: state.code });
+    const keys = { lobby: 'phase.lobby', night: 'phase.night', day: 'phase.day', voting: 'phase.voting', ended: 'phase.ended' };
+    swapText($('phaseLabel'), keys[state.phase] ? t(keys[state.phase], { n: state.day }) : '');
+    $('roleBtn').hidden = !(IN_GAME.has(state.phase) && !!state.you.role);
+    $('roleBtn').textContent = ui.showRoleCard ? t('btn.backToGame') : t('btn.role');
+  }
+
+  /* ── Screen 2: Lobby ── */
+  function renderLobby() {
+    const me = state.you;
+    $('lobbyCode').textContent = state.code;
+    $('lobbyCount').textContent = t('lobby.count', { n: state.players.length, max: state.maxPlayers });
+
+    $('lobbyList').replaceChildren(...state.players.map((p) => {
+      const tags = [];
+      if (p.isHost) tags.push(tag(t('tag.host'), 'host'));
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
+      if (!p.connected) tags.push(tag(t('tag.offline')));
+      const kick = me.isHost && p.id !== me.id
+        ? el('button', {
+            class: 'btn btn-xs', type: 'button', 'aria-label': t('lobby.removeAria', { name: p.name }),
+            onclick: () => send('kick_player', { playerId: p.id }),
+          }, t('lobby.remove'))
+        : null;
+      return playerRow(p, { tags, button: kick });
+    }));
+
+    const connected = state.players.filter((p) => p.connected).length;
+    $('hostControls').hidden = !me.isHost;
+    $('guestWait').hidden = me.isHost;
+
+    renderRoleSettings();
+
+    // Start is only possible when the role setup is valid; the reason is always shown.
+    const problem = currentRoleProblem();
+    $('startBtn').disabled = !!problem;
+    const hint = $('startHint');
+    hint.classList.toggle('start-error', !!problem && problem !== 'minPlayers');
+    if (problem === 'minPlayers') hint.textContent = t('lobby.hintWaiting', { min: state.minPlayers, n: connected });
+    else if (problem) hint.textContent = t(`roles.err.${problem}`);
+    else hint.textContent = t('lobby.hintReady', { n: connected });
+  }
+
+  /* ── Lobby: role settings (host edits, everyone sees them live) ── */
+  const sumCounts = (counts) => ROLE_ORDER.reduce((sum, role) => sum + (counts[role] || 0), 0);
+
+  /** Mirrors the server's checks; the server stays the authority when the game actually starts. */
+  function roleProblem(counts, connected, minPlayers) {
+    if (connected < minPlayers) return 'minPlayers';
+    const total = sumCounts(counts);
+    if (total !== connected) return 'mismatch';
+    if (counts.Mafia < 1) return 'noMafia';
+    if (counts.Mafia >= total - counts.Mafia) return 'mafiaMajority';
+    return null;
+  }
+
+  function currentRoleProblem() {
+    const rs = state && state.roleSettings;
+    if (!rs) return null;
+    return roleProblem(rs.counts, state.players.filter((p) => p.connected).length, state.minPlayers);
+  }
+
+  const rolesLocked = () => roleSendTimer !== null || roleInFlight > 0;
+
+  /** While the host is mid-edit the local numbers win, so a late echo can't make them jump back. */
+  function incomingRoleSettings(next) {
+    if (rolesLocked() && state && state.roleSettings) {
+      return { ...next, counts: state.roleSettings.counts, custom: state.roleSettings.custom };
+    }
+    return next;
+  }
+
+  function onRoleUpdateAck(res) {
+    roleInFlight = Math.max(0, roleInFlight - 1);
+    if (res && res.ok) {
+      if (!rolesLocked() && state && state.roleSettings) { state.roleSettings = res.roles; render(); }
+    } else {
+      send('request_state', {}); // the server rejected it: fall back to the server's numbers
+    }
+  }
+
+  function queueRoleUpdate() {
+    clearTimeout(roleSendTimer);
+    roleSendTimer = setTimeout(() => {
+      roleSendTimer = null;
+      if (!state || !state.roleSettings) return;
+      roleInFlight += 1;
+      send('update_roles', { roles: { ...state.roleSettings.counts } }, onRoleUpdateAck);
+    }, 90);
+  }
+
+  function stepRole(role, delta) {
+    const rs = state && state.roleSettings;
+    if (!rs || !state.you.isHost) return;
+    const value = Math.max(0, Math.min(state.maxPlayers, rs.counts[role] + delta));
+    if (value === rs.counts[role]) return;
+    state.roleSettings = { ...rs, counts: { ...rs.counts, [role]: value }, custom: true };
+    render();
+    queueRoleUpdate();
+  }
+
+  function autoBalance() {
+    if (!state || !state.you.isHost) return;
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    roleInFlight += 1;
+    send('update_roles', { auto: true }, onRoleUpdateAck);
+  }
+
+  function renderRoleSettings() {
+    const rs = state.roleSettings;
+    $('roleSettings').hidden = !rs;
+    if (!rs) return;
+
+    const isHost = state.you.isHost;
+    const connected = state.players.filter((p) => p.connected).length;
+    const total = sumCounts(rs.counts);
+
+    $('roleIntro').textContent = t(isHost ? 'roles.hostIntro' : 'roles.guestIntro');
+
+    $('roleList').replaceChildren(...ROLE_ORDER.map((role) => {
+      const value = rs.counts[role];
+      const control = isHost
+        ? el('div', { class: 'stepper' },
+            el('button', {
+              class: 'btn stepper-btn', type: 'button', disabled: value <= 0,
+              'aria-label': t('roles.dec', { role: roleName(role) }),
+              onclick: () => stepRole(role, -1),
+            }, '\u2212'),
+            el('span', { class: 'stepper-value', 'aria-live': 'polite', text: String(value) }),
+            el('button', {
+              class: 'btn stepper-btn', type: 'button', disabled: value >= state.maxPlayers,
+              'aria-label': t('roles.inc', { role: roleName(role) }),
+              onclick: () => stepRole(role, 1),
+            }, '+'))
+        : el('span', { class: 'role-count', text: String(value) });
+      return el('li', { class: 'role-row', 'data-role': role },
+        el('span', { class: 'role-swatch', 'aria-hidden': 'true' }),
+        el('span', { class: 'role-name', text: roleName(role) }),
+        control);
+    }));
+
+    const totalEl = $('roleTotal');
+    totalEl.textContent = t('roles.total', { roles: total, players: connected });
+    totalEl.classList.toggle('ok', total === connected && connected > 0);
+    totalEl.classList.toggle('bad', total !== connected);
+
+    $('roleMode').textContent = t(rs.custom ? 'roles.modeCustom' : 'roles.modeAuto');
+    $('roleAutoBtn').hidden = !isHost;
+    $('roleAutoBtn').disabled = !rs.custom;
+  }
+
+  /* ── Screen 3: Role card ── */
+  function renderRole() {
+    const role = state.you.role;
+    $('roleCard').dataset.role = role;
+    $('roleCard').classList.toggle('revealed', ui.roleRevealed);
+    $('roleName').textContent = roleName(role);
+    $('roleDesc').textContent = t(`role.desc.${role}`);
+    $('roleGoal').textContent = t(role === 'Mafia' ? 'role.goal.Mafia' : 'role.goal.Town');
+    $('roleFront').setAttribute('aria-hidden', String(!ui.roleRevealed));
+    $('roleBack').setAttribute('aria-hidden', String(ui.roleRevealed));
+    $('toggleRoleBtn').textContent = ui.roleRevealed ? t('role.hide') : t('role.show');
+
+    const team = $('roleTeam');
+    const mates = role === 'Mafia' ? state.you.teammates : [];
+    team.hidden = mates.length === 0;
+    team.replaceChildren(
+      ...(mates.length
+        ? [el('span', { class: 'muted', text: t(mates.length === 1 ? 'role.partner' : 'role.partners') }),
+           ...mates.map((m) => playerRow({ name: m.name, alive: true }))]
+        : []));
+  }
+
+  /* ── Screen 4: Night ── */
+  function renderNight() {
+    const me = state.you;
+    const cfg = NIGHT_ACTIONS[me.role];
+
+    let title;
+    let text;
+    if (!me.alive) {
+      title = t('night.specTitle');
+      text = t(cfg ? 'night.specTextAct' : 'night.specText');
+    } else if (!cfg) {
+      title = t('night.sleepTitle');
+      text = t('night.sleepText');
+    } else {
+      title = t('night.title', { n: state.day });
+      text = t('night.text');
+    }
+    $('nightTitle').textContent = title;
+    $('nightText').textContent = text;
+
+    $('nightActions').hidden = !cfg;
+    if (cfg) renderNightActions(me, cfg);
+  }
+
+  function renderNightActions(me, cfg) {
+    const role = me.role;
+    const night = state.night; // null when dead or when no action is available
+    const myTarget = night ? night.myTarget : null;
+    const locked = !!(night && night.locked);
+    const canAct = me.alive && !!night && !locked;
+
+    $('nightActions').style.setProperty('--accent', cfg.accent);
+    $('nightHeading').textContent = t(`act.${role}.heading`);
+    const mates = role === 'Mafia' ? me.teammates.map((m) => m.name) : [];
+    $('nightHelp').textContent = t(`act.${role}.help`) + (mates.length ? t('night.mates', { names: mates.join(', ') }) : '');
+
+    const teamPicks = night ? night.teamPicks : [];
+    const rows = state.players.filter((p) => cfg.targets(me, p)).map((p) => {
+      const tags = [];
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
+      for (const pick of teamPicks.filter((x) => x.targetId === p.id)) {
+        tags.push(tag(pick.mafiaId === me.id ? t('night.pickYours') : t('night.pickOf', { name: nameOf(pick.mafiaId) }), 'danger'));
+      }
+      return playerRow(p, {
+        tags,
+        button: pickButton({
+          label: myTarget === p.id ? t(`act.${role}.done`) : t(`act.${role}.verb`),
+          pressed: myTarget === p.id,
+          disabled: !canAct,
+          accent: cfg.accent,
+          onClick: () => send('night_action', { targetId: p.id }),
+        }),
+      });
+    });
+    $('nightList').replaceChildren(...rows);
+
+    let status;
+    if (!me.alive) status = t('status.dead');
+    else if (locked) status = t('status.locked', { name: nameOf(myTarget) });
+    else if (myTarget) status = t('status.chose', { name: nameOf(myTarget) }) + (role === 'Detective' ? '' : t('status.change'));
+    else status = t('status.pick');
+    swapText($('nightStatus'), status);
+  }
+
+  /* ── Screen 5: Day / Voting ── */
+  function renderDay() {
+    const me = state.you;
+    const voting = state.phase === 'voting';
+    const v = state.vote || { counts: {}, skip: 0, voted: [], total: 0, myVote: null };
+
+    let outcome = null;
+    if (ui.dayEvent && ui.dayEvent.day === state.day) outcome = { killed: ui.dayEvent.killed };
+    else outcome = parseNightLog();
+
+    $('dayTitle').textContent = t('day.title', { n: state.day });
+    $('dayText').textContent = outcome ? nightResultText(outcome.killed) : '';
+    $('dayAnnounce').classList.toggle('deadly', !!(outcome && outcome.killed));
+
+    swapText($('dayHeading'), voting ? t('day.whoMafia') : t('day.discussion'));
+    swapText($('dayStatus'), voting
+      ? t('day.statusVoting', { voted: v.voted.length, total: v.total })
+      : t('day.statusDiscussion'));
+
+    const alive = state.players.filter((p) => p.alive);
+    $('voteList').replaceChildren(...alive.map((p) => {
+      const tags = [];
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
+      if (voting && v.voted.includes(p.id)) tags.push(tag(t('vote.voted'), 'ok'));
+      const n = v.counts[p.id] || 0;
+      if (voting && n > 0) tags.push(tag(tp('plural.votes', n), 'votes'));
+      return playerRow(p, {
+        tags,
+        button: pickButton({
+          label: v.myVote === p.id ? t('vote.voted') : t('vote.cast'),
+          pressed: v.myVote === p.id,
+          disabled: !voting || !me.alive || p.id === me.id,
+          onClick: () => castVote(p.id),
+        }),
+      });
+    }));
+
+    const skip = $('skipVoteBtn');
+    skip.textContent = t('vote.skip') + (voting && v.skip ? ` (${v.skip})` : '');
+    skip.setAttribute('aria-pressed', String(v.myVote === 'skip'));
+    skip.disabled = !voting || !me.alive;
+
+    $('advanceBtn').hidden = !(me.isHost && state.phase === 'day');
+
+    const out = state.players.filter((p) => !p.alive);
+    $('outCard').hidden = out.length === 0;
+    $('outList').replaceChildren(...out.map((p) => playerRow(p, {
+      sub: causeText(p),
+      tags: [p.role ? roleTag(p.role) : null],
+    })));
+  }
+
+  function causeText(p) {
+    if (p.deathCause === 'mafia') return t('cause.mafia');
+    if (p.deathCause === 'vote') return t('cause.vote');
+    if (p.deathCause === 'left') return t('cause.left');
+    return null;
+  }
+
+  function castVote(targetId) {
+    send('cast_vote', { targetId }, (res) => {
+      if (res && res.ok && state && state.vote) {
+        state.vote.myVote = res.targetId === null ? 'skip' : res.targetId;
+        render();
+      }
     });
   }
 
-  function renderTopBar() {
-    const phase = state.phase;
-    const day = state.day;
-    const label = $('phaseLabel');
+  /* ── Screen 6: Game over ── */
+  function renderOver() {
+    const me = state.you;
+    const mafiaWon = state.winner === 'Mafia';
+    $('verdict').dataset.winner = state.winner || '';
+    $('overTitle').textContent = t(mafiaWon ? 'over.mafiaWins' : 'over.townWins');
+    $('overText').textContent = t(mafiaWon ? 'over.textMafia' : 'over.textTown');
+    const won = (me.role === 'Mafia') === mafiaWon;
+    $('overYou').textContent = me.role ? t(won ? 'over.youWon' : 'over.youLost', { role: roleName(me.role) }) : '';
 
-    if (phase === 'lobby') swapText(label, t('phase.lobby'));
-    else if (phase === 'night') swapText(label, t('phase.night', { n: day }));
-    else if (phase === 'day') swapText(label, t('phase.day', { n: day }));
-    else if (phase === 'voting') swapText(label, t('phase.voting', { n: day }));
-    else if (phase === 'ended') swapText(label, t('phase.ended'));
+    $('overList').replaceChildren(...state.players.map((p) => {
+      const tags = [p.role ? roleTag(p.role) : null];
+      if (p.id === me.id) tags.push(tag(t('tag.you')));
+      return playerRow(p, { tags, sub: p.alive ? t('cause.survived') : causeText(p) });
+    }));
 
-    const roleBtn = $('roleBtn');
-    if (IN_GAME.has(phase) || phase === 'ended') {
-      roleBtn.hidden = false;
-      roleBtn.textContent = ui.showRoleCard ? t('btn.backToGame') : t('btn.role');
-    } else {
-      roleBtn.hidden = true;
-    }
-
-    updateTimer();
+    $('returnBtn').disabled = !me.isHost;
+    $('returnHint').hidden = me.isHost;
   }
 
-  let timerInterval = null;
+  /* ── Shared panels ── */
+  function renderDeadBanner(screen) {
+    $('deadBanner').hidden = !(state && IN_GAME.has(state.phase) && !state.you.alive && screen !== 'role');
+  }
 
-  function updateTimer() {
-    const timerNode = $('phaseTimer');
-    if (!state || !state.phaseEndTime) {
-      timerNode.hidden = true;
-      if (timerInterval) clearInterval(timerInterval);
+  function renderNotes(screen) {
+    const list = state && state.you.role === 'Detective' ? state.you.investigations : [];
+    const show = !!state && IN_GAME.has(state.phase) && screen !== 'role' && list.length > 0;
+    $('notes').hidden = !show;
+    if (!show) return;
+    $('notesList').replaceChildren(...list.map((n) => el('li', {},
+      t('notes.prefix', { n: n.day, name: n.targetName }),
+      el('span', { class: n.result === 'Mafia' ? 'bad' : 'good', text: t(n.result === 'Mafia' ? 'res.mafia' : 'res.town') }))));
+  }
+
+  function chatMode(screen) {
+    if (!state || screen === 'role' || screen === 'join') return null;
+    const me = state.you;
+    switch (state.phase) {
+      case 'lobby':
+      case 'ended':
+        return { label: t('chat.room'), enabled: true };
+      case 'night':
+        return me.alive && me.role === 'Mafia' ? { label: t('chat.mafia'), enabled: true } : null;
+      default:
+        return me.alive ? { label: t('chat.town'), enabled: true } : { label: t('chat.dead'), enabled: true };
+    }
+  }
+
+  function renderChat(screen) {
+    const mode = chatMode(screen);
+    $('chat').hidden = !mode;
+    if (!mode) return;
+    $('chatChannel').textContent = mode.label;
+    $('chatInput').disabled = !mode.enabled;
+    $('chatSend').disabled = !mode.enabled;
+  }
+
+  function renderChatMessages() {
+    const log = $('chatLog');
+    if (ui.chat.length === 0) {
+      log.replaceChildren(el('li', { class: 'msg-empty', text: t('chat.empty') }));
       return;
     }
-
-    const now = Date.now() - clockOffset;
-    const remainingSec = Math.max(0, Math.ceil((state.phaseEndTime - now) / 1000));
-
-    timerNode.hidden = false;
-    const mins = Math.floor(remainingSec / 60);
-    const secs = remainingSec % 60;
-    timerNode.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-
-    if (remainingSec <= 10) timerNode.classList.add('urgent');
-    else timerNode.classList.remove('urgent');
-
-    if (!timerInterval) {
-      timerInterval = setInterval(updateTimer, 500);
-    }
+    log.replaceChildren(...ui.chat.map((m) => el('li', {
+      class: `msg ${m.channel}${state && m.from.id === state.you.id ? ' mine' : ''}`,
+    }, el('span', { class: 'msg-name', text: m.from.name }), el('span', { class: 'msg-text', text: m.text }))));
+    log.scrollTop = log.scrollHeight;
   }
 
-  /* ══════════════════════════ Join Screen ══════════════════════════ */
+  /* ══════════════════════════ Countdown ══════════════════════════ */
+
+  function tick() {
+    const timer = $('phaseTimer');
+    if (!state || !state.phaseEndsAt) {
+      timer.hidden = true;
+      if (overlayTimerEl) overlayTimerEl.hidden = true;
+      return;
+    }
+    const remain = Math.max(0, Math.ceil((state.phaseEndsAt - (Date.now() + clockOffset)) / 1000));
+    const label = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
+    timer.hidden = false;
+    timer.textContent = label;
+    timer.classList.toggle('urgent', remain <= 10);
+    // The overlay shows the very same countdown, so nothing drifts while the scene plays.
+    if (overlayTimerEl) {
+      overlayTimerEl.hidden = false;
+      overlayTimerEl.textContent = label;
+      overlayTimerEl.classList.toggle('urgent', remain <= 10);
+    }
+  }
+  setInterval(tick, 250);
+
+  /* ══════════════════════════ Phase transition overlay ══════════════════════════
+     Plays when the server announces a new phase (`phase_changed`). It is purely visual and
+     never intercepts touches, and the countdown / socket state keep updating underneath. */
+
+  const overlay = $('phaseOverlay');
+  const PHASE_FX = {
+    night: { title: 'phase.fx.night', sub: 'phase.fx.nightSub' },
+    day: { title: 'phase.fx.day', sub: 'phase.fx.daySub' },
+    voting: { title: 'phase.fx.voting', sub: 'phase.fx.votingSub' },
+  };
+  const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const PHASE_FX_MS = REDUCED_MOTION ? 1600 : 2800;
+  const supportsPopover = typeof overlay.showPopover === 'function';
+  let overlayTimeout = null;
+  let overlayTimerEl = null; // the <time> inside the running scene (null when no scene is playing)
+  let overlayScene = null;   // { phase, day } of the scene that is playing, for live retranslation
+
+  function refreshOverlayText() {
+    if (!overlayScene || !overlay.classList.contains('is-open')) return;
+    const fx = PHASE_FX[overlayScene.phase];
+    const title = overlay.querySelector('.po-title');
+    const sub = overlay.querySelector('.po-sub');
+    if (title) title.textContent = t(fx.title);
+    if (sub) sub.textContent = t(fx.sub, { n: overlayScene.day });
+    $('phaseAnnouncer').textContent = t(fx.title);
+  }
+
+  function starField(count) {
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < count; i++) {
+      const size = (1 + Math.random() * 2.4).toFixed(1);
+      frag.append(el('span', {
+        class: 'po-star',
+        style: `left:${(Math.random() * 100).toFixed(1)}%;top:${(Math.random() * 90).toFixed(1)}%;`
+          + `--s:${size}px;--d:${(Math.random() * 1.6).toFixed(2)}s;--t:${(1.1 + Math.random() * 1.4).toFixed(2)}s`,
+      }));
+    }
+    return frag;
+  }
+
+  function closePhaseOverlay() {
+    clearTimeout(overlayTimeout);
+    overlayTimeout = null;
+    overlay.classList.remove('is-open');
+    if (supportsPopover) { try { overlay.hidePopover(); } catch { /* not open */ } }
+    overlay.replaceChildren();
+    overlayTimerEl = null;
+    overlayScene = null;
+  }
+
+  function playPhaseTransition(phase, day) {
+    const fx = PHASE_FX[phase];
+    if (!fx) { closePhaseOverlay(); return; } // lobby / game over: no splash, and drop any running one
+    $('phaseAnnouncer').textContent = t(fx.title); // screen readers get the message even without visuals
+    if (document.hidden) return;
+
+    closePhaseOverlay(); // a newer phase replaces a scene that is still playing
+
+    const scene = $(`tpl-po-${phase}`).content.cloneNode(true);
+    const stars = scene.querySelector('.po-stars');
+    if (stars) stars.append(starField(30));
+
+    overlayTimerEl = el('time', { class: 'po-timer' });
+    overlay.dataset.kind = phase;
+    overlay.style.setProperty('--po-dur', `${PHASE_FX_MS}ms`);
+    overlay.replaceChildren(
+      el('div', { class: 'po-bg' }),
+      scene.querySelector('.po-back'),
+      el('div', { class: 'po-stage' },
+        scene.querySelector('.po-hero'),
+        el('div', { class: 'po-copy' },
+          el('h2', { class: 'po-title', text: t(fx.title) }),
+          el('p', { class: 'po-sub', text: t(fx.sub, { n: day }) }))),
+      overlayTimerEl);
+
+    overlayScene = { phase, day };
+    overlay.classList.add('is-open');
+    if (supportsPopover) { try { overlay.showPopover(); } catch { /* already open */ } }
+    tick(); // fill the timer right away
+    overlayTimeout = setTimeout(closePhaseOverlay, PHASE_FX_MS + 100);
+  }
+
+  /* ══════════════════════════ Join / create / leave ══════════════════════════ */
 
   const nameInput = $('nameInput');
   const codeInput = $('codeInput');
 
-  const savedName = remember.get('mafia.name');
-  if (savedName) nameInput.value = savedName;
-
-  const urlCode = readUrlCode();
-  if (urlCode) codeInput.value = urlCode;
-
-  nameInput.addEventListener('input', () => {
-    remember.set('mafia.name', nameInput.value.trim());
-  });
-
-  codeInput.addEventListener('input', () => {
-    codeInput.value = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    checkRoomHint();
-  });
-
-  let hintDebounce = null;
-  function checkRoomHint() {
-    const hint = $('codeHint');
-    const code = codeInput.value.trim();
-    if (code.length !== 4) {
-      hint.textContent = t('hint.default');
-      return;
-    }
-    if (hintDebounce) clearTimeout(hintDebounce);
-    hintDebounce = setTimeout(() => {
-      socket.emit('check_room', { roomCode: code }, (res) => {
-        if (!res || !res.exists) {
-          hint.textContent = t('hint.noRoom');
-        } else if (res.open) {
-          hint.textContent = t('hint.open', { code: res.code, players: tp('plural.players', res.playerCount) });
-        } else {
-          hint.textContent = t('hint.closed');
-        }
-      });
-    }, 200);
+  function setBusy(value) {
+    busy = value;
+    $('createBtn').disabled = value;
+    $('joinBtn').disabled = value;
   }
-  checkRoomHint();
 
-  $('createBtn').addEventListener('click', () => {
-    const name = nameInput.value.trim();
+  function readName() {
+    const name = nameInput.value.replace(/\s+/g, ' ').trim();
     if (name.length < MIN_NAME || name.length > MAX_NAME) {
       toast(t('err.nickname', { min: MIN_NAME, max: MAX_NAME }));
-      return;
+      nameInput.focus();
+      return null;
     }
-    const requestedCode = codeInput.value.trim();
-    if (requestedCode && requestedCode.length !== 4) {
-      toast(t('err.codeFormat'));
-      return;
-    }
+    remember.set('mafia.name', name);
+    return name;
+  }
 
-    busy = true;
-    socket.emit('create_room', { name, roomCode: requestedCode || undefined }, (res) => {
-      busy = false;
-      if (res && res.ok) {
-        // Room created; room_state event will render
-      } else {
-        toast(translateServerError(res ? res.error : t('err.generic')));
-      }
+  function enteredRoom(res) {
+    store.set('mafia.session', { code: res.code, playerId: res.playerId });
+    updateUrl(res.code);
+  }
+
+  function createRoom() {
+    if (busy) return;
+    const name = readName();
+    if (!name) return;
+    const code = codeInput.value.trim().toUpperCase();
+    if (code && !/^[A-Z0-9]{4}$/.test(code)) { toast(t('err.codeFormat')); codeInput.focus(); return; }
+    ui.replaced = false;
+    setBusy(true);
+    send('create_room', { name, code: code || undefined }, (res) => {
+      setBusy(false);
+      if (res && res.ok) enteredRoom(res);
     });
-  });
+  }
 
-  $('joinBtn').addEventListener('click', () => {
-    const name = nameInput.value.trim();
-    if (name.length < MIN_NAME || name.length > MAX_NAME) {
-      toast(t('err.nickname', { min: MIN_NAME, max: MAX_NAME }));
-      return;
-    }
-    const code = codeInput.value.trim();
-    if (code.length !== 4) {
-      toast(t('err.codeNeeded'));
-      return;
-    }
-
-    busy = true;
-    socket.emit('join_room', { name, roomCode: code }, (res) => {
-      busy = false;
-      if (res && res.ok) {
-        // Joined room; room_state will handle rendering
-      } else {
-        toast(translateServerError(res ? res.error : t('err.generic')));
-      }
+  function joinRoom() {
+    if (busy) return;
+    const name = readName();
+    if (!name) return;
+    const code = codeInput.value.trim().toUpperCase();
+    if (!/^[A-Z0-9]{4}$/.test(code)) { toast(t('err.codeNeeded')); codeInput.focus(); return; }
+    ui.replaced = false;
+    const saved = store.get('mafia.session');
+    setBusy(true);
+    send('join_room', { code, name, playerId: saved && saved.code === code ? saved.playerId : undefined }, (res) => {
+      setBusy(false);
+      if (res && res.ok) enteredRoom(res);
     });
-  });
-
-  /* ══════════════════════════ Lobby Screen ══════════════════════════ */
-
-  function renderLobby() {
-    $('lobbyCode').textContent = state.roomCode;
-    const players = state.players || [];
-    const minPlayers = state.minPlayers || 4;
-    const maxPlayers = state.maxPlayers || 15;
-    const isHost = state.me && state.me.isHost;
-
-    $('lobbyCount').textContent = t('lobby.count', { n: players.length, max: maxPlayers });
-
-    const list = $('lobbyList');
-    list.replaceChildren();
-
-    for (const p of players) {
-      const avatar = el('div', { class: 'avatar', text: p.name.charAt(0).toUpperCase() });
-      const name = el('span', { class: 'row-name', text: p.name });
-
-      const tags = el('div', { class: 'row-tags' });
-      if (p.isHost) tags.append(el('span', { class: 'tag host', text: t('tag.host') }));
-      if (state.me && p.id === state.me.id) tags.append(el('span', { class: 'tag ok', text: t('tag.you') }));
-      if (!p.connected) tags.append(el('span', { class: 'tag danger', text: t('tag.offline') }));
-
-      const rowMain = el('div', { class: 'row-main' }, name);
-      const row = el('div', { class: 'row' }, avatar, rowMain, tags);
-
-      if (isHost && p.id !== state.me.id) {
-        const kickBtn = el('button', {
-          class: 'btn btn-xs',
-          type: 'button',
-          text: t('lobby.remove'),
-          'aria-label': t('lobby.removeAria', { name: p.name }),
-          onClick: () => {
-            socket.emit('kick_player', { targetId: p.id }, (res) => {
-              if (res && !res.ok) toast(translateServerError(res.error));
-            });
-          },
-        });
-        row.append(kickBtn);
-      }
-
-      list.append(row);
-    }
-
-    renderRoleSettings();
-
-    const hostControls = $('hostControls');
-    const guestWait = $('guestWait');
-    const startHint = $('startHint');
-
-    if (isHost) {
-      hostControls.hidden = false;
-      guestWait.hidden = true;
-
-      const connectedCount = players.filter((p) => p.connected).length;
-      if (connectedCount < minPlayers) {
-        startHint.textContent = t('lobby.hintWaiting', { min: minPlayers, n: connectedCount });
-        $('startBtn').disabled = true;
-      } else {
-        startHint.textContent = t('lobby.hintReady', { n: connectedCount });
-        $('startBtn').disabled = false;
-      }
-    } else {
-      hostControls.hidden = true;
-      guestWait.hidden = false;
-    }
   }
 
-  $('copyLinkBtn').addEventListener('click', () => {
-    const url = `${location.origin}${location.pathname}?room=${state.roomCode}`;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url).then(() => toast(t('toast.linkCopied'), 'ok'))
-        .catch(() => toast(t('toast.copyManual', { url }), 'info'));
-    } else {
-      toast(t('toast.copyManual', { url }), 'info');
-    }
-  });
-
-  $('startBtn').addEventListener('click', () => {
-    if (!state || !state.me || !state.me.isHost) return;
-    socket.emit('start_game', {}, (res) => {
-      if (res && !res.ok) {
-        toast(translateServerError(res.error));
-      }
-    });
-  });
-
-  /* ══════════════════════════ Role Settings ══════════════════════════ */
-
-  function renderRoleSettings() {
-    const isHost = state.me && state.me.isHost;
-    const settings = state.roleSettings || { mode: 'auto', counts: {} };
-    const counts = settings.counts || {};
-    const totalPlayers = (state.players || []).length;
-
-    $('roleIntro').textContent = isHost ? t('roles.hostIntro') : t('roles.guestIntro');
-    $('roleMode').textContent = settings.mode === 'auto' ? t('roles.modeAuto') : t('roles.modeCustom');
-
-    const autoBtn = $('roleAutoBtn');
-    autoBtn.hidden = !isHost;
-    autoBtn.onclick = () => {
-      socket.emit('update_roles', { mode: 'auto' }, (res) => {
-        if (res && !res.ok) toast(translateServerError(res.error));
-      });
-    };
-
-    const list = $('roleList');
-    list.replaceChildren();
-
-    let setRolesTotal = 0;
-
-    for (const rKey of ROLE_ORDER) {
-      const count = counts[rKey] || 0;
-      setRolesTotal += count;
-
-      const swatch = el('div', { class: 'role-swatch', 'data-role': rKey });
-      const name = el('span', { class: 'role-name', text: roleName(rKey) });
-
-      let controls;
-      if (isHost) {
-        const decBtn = el('button', {
-          class: 'btn btn-xs stepper-btn',
-          type: 'button',
-          text: '−',
-          'aria-label': t('roles.dec', { role: roleName(rKey) }),
-          disabled: count <= 0,
-          onClick: () => changeRoleCount(rKey, -1),
-        });
-        const valSpan = el('span', { class: 'stepper-value', text: String(count) });
-        const incBtn = el('button', {
-          class: 'btn btn-xs stepper-btn',
-          type: 'button',
-          text: '+',
-          'aria-label': t('roles.inc', { role: roleName(rKey) }),
-          disabled: count >= totalPlayers,
-          onClick: () => changeRoleCount(rKey, 1),
-        });
-        controls = el('div', { class: 'stepper' }, decBtn, valSpan, incBtn);
-      } else {
-        controls = el('span', { class: 'role-count', 'data-role': rKey, text: String(count) });
-      }
-
-      list.append(el('div', { class: 'role-row' }, swatch, name, controls));
-    }
-
-    const totalEl = $('roleTotal');
-    totalEl.textContent = t('roles.total', { roles: setRolesTotal, players: totalPlayers });
-
-    if (setRolesTotal === totalPlayers) {
-      totalEl.className = 'role-total ok';
-    } else {
-      totalEl.className = 'role-total bad';
-    }
-  }
-
-  function changeRoleCount(role, delta) {
-    if (!state || !state.roleSettings) return;
-    const currentCounts = Object.assign({}, state.roleSettings.counts);
-    const newCount = Math.max(0, (currentCounts[role] || 0) + delta);
-    currentCounts[role] = newCount;
-
-    state.roleSettings.mode = 'custom';
-    state.roleSettings.counts = currentCounts;
-    renderRoleSettings();
-
-    if (roleSendTimer) clearTimeout(roleSendTimer);
-    roleSendTimer = setTimeout(() => {
-      roleInFlight++;
-      socket.emit('update_roles', { mode: 'custom', counts: currentCounts }, (res) => {
-        roleInFlight--;
-        if (res && !res.ok) toast(translateServerError(res.error));
-      });
-    }, 150);
-  }
-
-  /* ══════════════════════════ Role Card Screen ══════════════════════════ */
-
-  function renderRoleCard() {
-    const me = state ? state.me : null;
-    if (!me || !me.role) return;
-
-    const card = $('roleCard');
-    card.dataset.role = me.role;
-
-    if (ui.roleRevealed) card.classList.add('revealed');
-    else card.classList.remove('revealed');
-
-    $('roleName').textContent = roleName(me.role);
-    $('roleDesc').textContent = t(`role.desc.${me.role}`);
-    $('roleGoal').textContent = t(`role.goal.${me.role}`);
-
-    const teamNode = $('roleTeam');
-    if (me.role === 'Mafia' && me.partners && me.partners.length > 0) {
-      teamNode.hidden = false;
-      teamNode.replaceChildren();
-      const labelText = me.partners.length === 1 ? t('role.partner') : t('role.partners');
-      teamNode.append(el('p', { class: 'muted', text: labelText }));
-      for (const pName of me.partners) {
-        teamNode.append(el('div', { class: 'row' }, el('span', { class: 'row-name', text: pName })));
-      }
-    } else {
-      teamNode.hidden = true;
-    }
-
-    $('toggleRoleBtn').textContent = ui.roleRevealed ? t('role.hide') : t('role.show');
-  }
-
-  $('toggleRoleBtn').addEventListener('click', () => {
-    ui.roleRevealed = !ui.roleRevealed;
-    renderRoleCard();
-  });
-
-  $('roleContinueBtn').addEventListener('click', () => {
+  function resetToJoinScreen() {
+    store.del('mafia.session');
+    closePhaseOverlay();
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    roleInFlight = 0;
+    state = null;
     ui.showRoleCard = false;
     ui.roleRevealed = false;
+    ui.dayEvent = null;
+    ui.chat = [];
+    ui.prevPhase = null;
+    updateUrl(null);
+    codeInput.value = '';
+    $('codeHint').textContent = t('hint.default');
+    renderChatMessages();
     render();
+  }
+
+  function leaveRoom() {
+    if (!state) return;
+    if (IN_GAME.has(state.phase) && state.you.alive && !confirm(t('confirm.leave'))) return;
+    send('leave_room', {}, (res) => { if (res && res.ok) resetToJoinScreen(); });
+  }
+
+  /** Re-attach to the same seat after a refresh or dropped connection. */
+  function resume() {
+    const saved = store.get('mafia.session');
+    if (!saved || ui.replaced) return;
+    socket.timeout(8000).emit('join_room', { code: saved.code, playerId: saved.playerId }, (err, res) => {
+      if (err) return; // try again on the next connect
+      if (res && res.ok) { updateUrl(res.code); return; }
+      resetToJoinScreen();
+      const why = translateServerError(res && res.error);
+      toast(why ? t('toast.rejoinFailWhy', { reason: why }) : t('toast.rejoinFail'), 'info');
+    });
+  }
+
+  let hintTimer = null;
+  async function checkRoomHint() {
+    const code = codeInput.value.toUpperCase();
+    const hint = $('codeHint');
+    if (!/^[A-Z0-9]{4}$/.test(code)) { hint.textContent = t('hint.default'); return; }
+    try {
+      const res = await fetch(`/api/rooms/${code}`);
+      if (codeInput.value.toUpperCase() !== code) return; // input changed meanwhile
+      if (res.status === 404) {
+        hint.textContent = t('hint.noRoom');
+      } else if (res.ok) {
+        const info = await res.json();
+        hint.textContent = info.joinable
+          ? t('hint.open', { code, players: tp('plural.players', info.players) })
+          : t('hint.closed');
+      } else {
+        hint.textContent = t('hint.default');
+      }
+    } catch {
+      hint.textContent = t('hint.default');
+    }
+  }
+
+  codeInput.addEventListener('input', () => {
+    codeInput.value = normalizeCode(codeInput.value);
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(checkRoomHint, 250);
   });
+  $('joinForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (codeInput.value.trim().length === 4) joinRoom(); else createRoom();
+  });
+  $('createBtn').addEventListener('click', createRoom);
+  $('joinBtn').addEventListener('click', joinRoom);
+  $('leaveBtn').addEventListener('click', leaveRoom);
+
+  document.querySelectorAll('.lang-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setLang(btn.dataset.lang));
+  });
+
+  /* ══════════════════════════ In-room controls ══════════════════════════ */
+
+  async function copyInvite() {
+    if (!state) return;
+    const url = `${location.origin}/room/${state.code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast(t('toast.linkCopied'), 'ok');
+    } catch {
+      toast(t('toast.copyManual', { url }), 'info');
+    }
+  }
+
+  $('copyLinkBtn').addEventListener('click', copyInvite);
+
+  $('startBtn').addEventListener('click', () => {
+    if (!state) return;
+    const problem = currentRoleProblem();
+    if (problem) { // the button is normally disabled; this guards against stale clicks
+      const connected = state.players.filter((p) => p.connected).length;
+      toast(problem === 'minPlayers'
+        ? t('err.needPlayers', { min: state.minPlayers, n: connected })
+        : t(`roles.err.${problem}`));
+      return;
+    }
+    // With a hand-made setup, send the counts along so the start can never race an unsent edit.
+    const rs = state.roleSettings;
+    const payload = rs && rs.custom ? { roles: { ...rs.counts } } : {};
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    send('start_game', payload);
+  });
+  $('roleAutoBtn').addEventListener('click', autoBalance);
+
+  $('advanceBtn').addEventListener('click', () => send('advance_phase', {}));
+  $('skipVoteBtn').addEventListener('click', () => castVote(null));
+  $('returnBtn').addEventListener('click', () => send('play_again', {}));
 
   $('roleBtn').addEventListener('click', () => {
     ui.showRoleCard = !ui.showRoleCard;
     ui.roleRevealed = false;
     render();
   });
-
-  /* ══════════════════════════ Night Screen ══════════════════════════ */
-
-  function renderNight() {
-    const me = state ? state.me : null;
-    const day = state.day || 1;
-    const isDead = me && !me.alive;
-
-    $('nightTitle').textContent = t('night.title', { n: day });
-
-    if (isDead) {
-      $('nightText').textContent = t('night.specText');
-      $('nightActions').hidden = true;
-      return;
-    }
-
-    if (!me || !me.role || me.role === 'Townsperson') {
-      $('nightText').textContent = t('night.sleepText');
-      $('nightActions').hidden = true;
-      return;
-    }
-
-    $('nightText').textContent = t('night.text');
-    $('nightActions').hidden = false;
-
-    const actionDef = NIGHT_ACTIONS[me.role];
-    const headingNode = $('nightHeading');
-    const helpNode = $('nightHelp');
-
-    headingNode.textContent = t(`act.${me.role}.heading`);
-    helpNode.textContent = t(`act.${me.role}.help`);
-
-    const players = state.players || [];
-    const validTargets = players.filter((p) => actionDef.targets(me, p));
-
-    const list = $('nightList');
-    list.replaceChildren();
-
-    const myAction = me.nightAction; // selected target ID if already picked
-
-    for (const p of validTargets) {
-      const isSelected = myAction === p.id;
-      const avatar = el('div', { class: 'avatar', text: p.name.charAt(0).toUpperCase() });
-      const nameNode = el('span', { class: 'row-name', text: p.name });
-
-      const pickBtn = el('button', {
-        class: 'btn btn-xs pick',
-        type: 'button',
-        'aria-pressed': String(isSelected),
-        text: isSelected ? t(`act.${me.role}.done`) : t(`act.${me.role}.verb`),
-        style: `--accent: ${actionDef.accent}`,
-        onClick: () => performNightAction(p.id),
-      });
-
-      const row = el('div', { class: 'row' }, avatar, el('div', { class: 'row-main' }, nameNode), pickBtn);
-      list.append(row);
-    }
-
-    const statusNode = $('nightStatus');
-    if (myAction) {
-      const targetObj = players.find((p) => p.id === myAction);
-      const targetName = targetObj ? targetObj.name : 'someone';
-      statusNode.textContent = t('status.chose', { name: targetName }) + t('status.change');
-    } else {
-      statusNode.textContent = t('status.pick');
-    }
-  }
-
-  function performNightAction(targetId) {
-    if (!state || !state.me) return;
-    socket.emit('night_action', { targetId }, (res) => {
-      if (res && !res.ok) {
-        toast(translateServerError(res.error));
-      }
-    });
-  }
-
-  /* ══════════════════════════ Day / Voting Screen ══════════════════════════ */
-
-  function renderDay() {
-    renderDayAnnounce();
-
-    const isVoting = state.phase === 'voting';
-    const isHost = state.me && state.me.isHost;
-    const me = state.me;
-    const isDead = me && !me.alive;
-
-    $('dayHeading').textContent = isVoting ? t('day.whoMafia') : t('day.discussion');
-
-    const totalLiving = (state.players || []).filter((p) => p.alive).length;
-    const votesCast = Object.keys(state.votes || {}).length;
-
-    const statusNode = $('dayStatus');
-    if (isVoting) {
-      statusNode.textContent = t('day.statusVoting', { voted: votesCast, total: totalLiving });
-    } else {
-      statusNode.textContent = t('day.statusDiscussion');
-    }
-
-    const advanceBtn = $('advanceBtn');
-    advanceBtn.hidden = !isHost || isVoting;
-    advanceBtn.onclick = () => {
-      socket.emit('start_voting', {}, (res) => {
-        if (res && !res.ok) toast(translateServerError(res.error));
-      });
-    };
-
-    const list = $('voteList');
-    list.replaceChildren();
-
-    const players = state.players || [];
-    const living = players.filter((p) => p.alive);
-    const votes = state.votes || {};
-    const myVote = me ? me.vote : null;
-
-    for (const p of living) {
-      const isMe = me && p.id === me.id;
-      const avatar = el('div', { class: 'avatar', text: p.name.charAt(0).toUpperCase() });
-      const nameNode = el('span', { class: 'row-name', text: p.name });
-
-      // Count votes on this player
-      let count = 0;
-      for (const vTarget of Object.values(votes)) {
-        if (vTarget === p.id) count++;
-      }
-
-      const tagsNode = el('div', { class: 'row-tags' });
-      if (count > 0) {
-        tagsNode.append(el('span', { class: 'tag votes', text: tp('plural.votes', count) }));
-      }
-
-      const rowMain = el('div', { class: 'row-main' }, nameNode);
-      const row = el('div', { class: 'row' }, avatar, rowMain, tagsNode);
-
-      if (isVoting && !isDead && !isMe) {
-        const isSelected = myVote === p.id;
-        const voteBtn = el('button', {
-          class: 'btn btn-xs pick',
-          type: 'button',
-          'aria-pressed': String(isSelected),
-          text: isSelected ? t('vote.voted') : t('vote.cast'),
-          onClick: () => castVote(p.id),
-        });
-        row.append(voteBtn);
-      }
-
-      list.append(row);
-    }
-
-    const skipBtn = $('skipVoteBtn');
-    if (isVoting && !isDead) {
-      skipBtn.hidden = false;
-      const isSkipped = myVote === 'skip';
-      skipBtn.setAttribute('aria-pressed', String(isSkipped));
-      skipBtn.textContent = isSkipped ? t('vote.voted') : t('vote.skip');
-      skipBtn.onclick = () => castVote('skip');
-    } else {
-      skipBtn.hidden = true;
-    }
-
-    // Render dead players list
-    const dead = players.filter((p) => !p.alive);
-    const outCard = $('outCard');
-    if (dead.length > 0) {
-      outCard.hidden = false;
-      const outList = $('outList');
-      outList.replaceChildren();
-      for (const p of dead) {
-        const avatar = el('div', { class: 'avatar', text: p.name.charAt(0).toUpperCase() });
-        const nameNode = el('span', { class: 'row-name', text: p.name });
-
-        let causeKey = 'cause.left';
-        if (p.deathReason === 'mafia') causeKey = 'cause.mafia';
-        else if (p.deathReason === 'vote') causeKey = 'cause.vote';
-
-        const subNode = el('span', { class: 'row-sub', text: t(causeKey) });
-        const rowMain = el('div', { class: 'row-main' }, nameNode, subNode);
-
-        outList.append(el('div', { class: 'row out' }, avatar, rowMain));
-      }
-    } else {
-      outCard.hidden = true;
-    }
-  }
-
-  function renderDayAnnounce() {
-    const day = state ? state.day : 1;
-    const announceCard = $('dayAnnounce');$('dayTitle').textContent = t('day.title', { n: day });
-
-    const evt = ui.dayEvent;
-    if (evt && evt.day === day) {
-      if (evt.killed) {
-        announceCard.className = 'card announce deadly';
-        $('dayText').textContent = t('night.killed', { name: evt.killed.name, role: roleName(evt.killed.role) });
-      } else {
-        announceCard.className = 'card announce';
-        $('dayText').textContent = t('night.peaceful');
-      }
-    } else {
-      announceCard.className = 'card announce';
-      $('dayText').textContent = t('night.peaceful');
-    }
-  }
-
-  function castVote(targetId) {
-    if (!state || !state.me) return;
-    socket.emit('cast_vote', { targetId }, (res) => {
-      if (res && !res.ok) {
-        toast(translateServerError(res.error));
-      }
-    });
-  }
-
-  /* ══════════════════════════ Game Over Screen ══════════════════════════ */
-
-  function renderOver() {
-    const winner = state.winner || 'Town';
-    const me = state.me;
-
-    const verdictNode = $('verdict');
-    verdictNode.dataset.winner = winner;
-
-    if (winner === 'Mafia') {
-      $('overTitle').textContent = t('over.mafiaWins');$('overText').textContent = t('over.textMafia');
-    } else {
-      $('overTitle').textContent = t('over.townWins');$('overText').textContent = t('over.textTown');
-    }
-
-    if (me && me.role) {
-      const myTeamWon = (winner === 'Mafia' && me.role === 'Mafia') || (winner === 'Town' && me.role !== 'Mafia');
-      if (myTeamWon) {
-        $('overYou').textContent = t('over.youWon', { role: roleName(me.role) });
-      } else {
-        $('overYou').textContent = t('over.youLost', { role: roleName(me.role) });
-      }
-    } else {
-      $('overYou').textContent = '';
-    }
-
-    const list = $('overList');
-    list.replaceChildren();
-
-    const players = state.players || [];
-    for (const p of players) {
-      const avatar = el('div', { class: 'avatar', text: p.name.charAt(0).toUpperCase() });
-      const nameNode = el('span', { class: 'row-name', text: p.name });
-
-      const roleTag = el('span', { class: 'tag', 'data-role': p.role, text: roleName(p.role) });
-      const tagsNode = el('div', { class: 'row-tags' }, roleTag);
-
-      const rowMain = el('div', { class: 'row-main' }, nameNode);
-      const row = el('div', { class: `row ${p.alive ? '' : 'out'}` }, avatar, rowMain, tagsNode);
-      list.append(row);
-    }
-
-    const isHost = me && me.isHost;
-    const returnBtn = $('returnBtn');
-    const returnHint = $('returnHint');
-
-    returnBtn.hidden = !isHost;
-    returnHint.hidden = isHost;
-
-    returnBtn.onclick = () => {
-      socket.emit('return_to_lobby', {}, (res) => {
-        if (res && !res.ok) toast(translateServerError(res.error));
-      });
-    };
-  }
-
-  /* ══════════════════════════ Detective Notes ══════════════════════════ */
-
-  function renderNotes() {
-    const notesCard = $('notes');
-    const me = state ? state.me : null;
-
-    if (!me || me.role !== 'Detective' || !me.notes || me.notes.length === 0) {
-      notesCard.hidden = true;
-      return;
-    }
-
-    notesCard.hidden = false;
-    const list = $('notesList');
-    list.replaceChildren();
-
-    for (const item of me.notes) {
-      const prefix = t('notes.prefix', { n: item.day, name: item.targetName });
-      const resultStr = item.isMafia ? t('res.mafia') : t('res.town');
-      const spanClass = item.isMafia ? 'bad' : 'good';
-
-      const li = el('li', {}, prefix, el('span', { class: spanClass, text: resultStr }));
-      list.append(li);
-    }
-  }
-
-  /* ══════════════════════════ Chat ══════════════════════════ */
-
-  function renderChat() {
-    const chatCard = $('chat');
-    const phase = state ? state.phase : 'none';
-    const me = state ? state.me : null;
-
-    if (!state || phase === 'none') {
-      chatCard.hidden = true;
-      return;
-    }
-
-    chatCard.hidden = false;
-
-    const channelNode = $('chatChannel');
-    const isDead = me && !me.alive;
-
-    if (isDead) {
-      channelNode.textContent = t('chat.dead');
-    } else if (phase === 'night' && me && me.role === 'Mafia') {
-      channelNode.textContent = t('chat.mafia');
-    } else if (phase === 'lobby') {
-      channelNode.textContent = t('chat.room');
-    } else {
-      channelNode.textContent = t('chat.town');
-    }
-
-    renderChatMessages();
-  }
-
-  function renderChatMessages() {
-    const log = $('chatLog');
-    if (!log) return;
-
-    log.replaceChildren();
-
-    if (ui.chat.length === 0) {
-      log.append(el('li', { class: 'msg-empty', text: t('chat.empty') }));
-      return;
-    }
-
-    const me = state ? state.me : null;
-
-    for (const m of ui.chat) {
-      const isMine = me && m.senderId === me.id;
-      let msgClass = 'msg';
-      if (isMine) msgClass += ' mine';
-      if (m.isMafia) msgClass += ' mafia';
-      if (m.isDead) msgClass += ' dead';
-
-      const nameSpan = el('span', { class: 'msg-name', text: `${m.senderName}:` });
-      const textSpan = el('span', { class: 'msg-text', text: m.text });
-
-      log.append(el('li', { class: msgClass }, nameSpan, textSpan));
-    }
-
-    log.scrollTop = log.scrollHeight;
-  }
+  $('toggleRoleBtn').addEventListener('click', () => {
+    ui.roleRevealed = !ui.roleRevealed;
+    render();
+  });
+  $('roleContinueBtn').addEventListener('click', () => {
+    ui.showRoleCard = false;
+    ui.roleRevealed = false;
+    render();
+  });
+
+  // Hide the role whenever the tab is backgrounded (e.g. locking the phone).
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) closePhaseOverlay();
+    if (document.hidden && ui.roleRevealed) { ui.roleRevealed = false; render(); }
+  });
 
   $('chatForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const input = $('chatInput');
     const text = input.value.trim();
     if (!text) return;
-
-    socket.emit('send_chat', { text }, (res) => {
-      if (res && res.ok) {
-        input.value = '';
-      } else if (res && res.error) {
-        toast(translateServerError(res.error));
-      }
-    });
+    send('chat_message', { text }, (res) => { if (res && res.ok) input.value = ''; });
   });
 
-  /* ══════════════════════════ Top bar action handlers ══════════════════════════ */
+  /* ══════════════════════════ Server events ══════════════════════════ */
 
-  $('leaveBtn').addEventListener('click', () => {
-    const phase = state ? state.phase : 'none';
-    if (IN_GAME.has(phase)) {
-      if (!confirm(t('confirm.leave'))) return;
-    }
+  socket.on('connect', () => {
+    $('conn').hidden = true;
+    resume();
+  });
+  socket.on('disconnect', () => { $('conn').hidden = false; });
+  socket.on('connect_error', () => { $('conn').hidden = false; });
 
-    socket.emit('leave_room', {}, () => {
-      store.del('mafia.creds');
-      state = null;
+  socket.on('room_state', (s) => {
+    clockOffset = s.serverTime - Date.now();
+    if (s.phase === 'lobby' && ui.prevPhase && ui.prevPhase !== 'lobby') {
       ui.chat = [];
-      updateUrl('');
-      render();
+      ui.dayEvent = null;
+      ui.showRoleCard = false;
+      ui.roleRevealed = false;
+      renderChatMessages();
+    }
+    ui.prevPhase = s.phase;
+    if (s.roleSettings) s.roleSettings = incomingRoleSettings(s.roleSettings);
+    state = s;
+    render();
+  });
+
+  // Live sync: the host's role counters reach everyone in the lobby as they change.
+  socket.on('roles_updated', (settings) => {
+    if (!state || state.phase !== 'lobby') return;
+    state.roleSettings = incomingRoleSettings(settings);
+    render();
+  });
+
+  socket.on('game_started', () => {
+    ui.showRoleCard = true;
+    ui.roleRevealed = false;
+    ui.dayEvent = null;
+    ui.chat = [];
+    renderChatMessages();
+  });
+
+  socket.on('phase_changed', (p) => {
+    clockOffset = p.serverTime - Date.now();
+    // Use the new deadline immediately (room_state follows moments later), so the countdown is
+    // correct from the first frame of the transition.
+    if (state) state.phaseEndsAt = p.endsAt;
+    // Night keeps the role card open (it opens at game start); any later phase closes it.
+    if (p.phase !== 'night') { ui.showRoleCard = false; ui.roleRevealed = false; }
+    playPhaseTransition(p.phase, p.day);
+  });
+
+  // The announcement text is rebuilt on the client from structured data, so it follows the active language.
+  socket.on('day_event', (e) => { ui.dayEvent = { day: e.day, killed: e.killed }; });
+
+  socket.on('player_eliminated', (e) => {
+    if (!state || e.id !== state.you.id || e.cause === 'left') return;
+    showModal({
+      title: () => t('elim.title'),
+      tone: 'mafia',
+      body: () => [
+        el('p', { text: t(e.cause === 'mafia' ? 'elim.mafia' : e.cause === 'vote' ? 'elim.vote' : 'elim.default') }),
+        el('p', { class: 'muted', text: t('elim.note') }),
+      ],
+      ok: () => t('elim.keep'),
     });
   });
 
-  /* ══════════════════════════ Language toggle setup ══════════════════════════ */
-
-  $('langToggle').addEventListener('click', (e) => {
-    const btn = e.target.closest('.lang-btn');
-    if (btn && btn.dataset.lang) {
-      setLang(btn.dataset.lang);
+  socket.on('investigation_result', (r) => {
+    const isMafia = r.result === 'Mafia';
+    if (state) {
+      state.you.investigations = [...state.you.investigations,
+        { day: state.day, targetId: r.targetId, targetName: r.targetName, result: r.result }];
     }
+    showModal({
+      title: () => t('inv.title'),
+      tone: isMafia ? 'mafia' : 'town',
+      body: () => [
+        el('p', { class: `modal-big ${isMafia ? 'mafia' : 'town'}`, text: t(isMafia ? 'inv.mafia' : 'inv.town', { name: r.targetName }) }),
+        el('p', { class: 'muted', text: t(isMafia ? 'inv.subMafia' : 'inv.subTown') }),
+      ],
+    });
+    render();
   });
 
-  // Initial application of translations
-  applyStatic();
+  socket.on('night_action_confirmed', (e) => {
+    if (!state || !state.night) return;
+    state.night.myTarget = e.targetId;
+    if (e.role === 'Detective') state.night.locked = true;
+    render();
+  });
 
+  socket.on('mafia_picks', (e) => {
+    if (!state || !state.night) return;
+    state.night.teamPicks = e.picks;
+    render();
+  });
+
+  socket.on('vote_update', (v) => {
+    if (!state || state.phase !== 'voting') return;
+    state.vote = { ...(state.vote || {}), counts: v.counts, skip: v.skip, voted: v.voted, total: v.total };
+    render();
+  });
+
+  socket.on('vote_result', (e) => {
+    showModal({
+      title: () => t(e.eliminated ? 'voteRes.eliminated' : 'voteRes.none'),
+      tone: e.eliminated && e.eliminated.role === 'Mafia' ? 'town' : '',
+      body: () => {
+        const nodes = [el('p', { text: voteResultText(e) })];
+        if (e.votes.length) {
+          nodes.push(el('ul', { class: 'list' }, e.votes.map((v) => el('li', { class: 'vote-line' },
+            el('strong', { text: v.voterName }),
+            v.targetName ? [t('vote.for'), el('strong', { text: v.targetName })] : t('vote.skipped')))));
+        }
+        return nodes;
+      },
+    });
+  });
+
+  // The verdict text is derived from `state.winner` in the active language (see renderOver).
+  socket.on('game_over', () => { /* room_state follows with phase "ended" */ });
+
+  socket.on('chat_message', (m) => {
+    ui.chat.push(m);
+    if (ui.chat.length > 100) ui.chat.shift();
+    renderChatMessages();
+  });
+
+  socket.on('kicked', () => {
+    resetToJoinScreen();
+    toast(t('toast.kicked'));
+  });
+
+  socket.on('session_replaced', () => {
+    ui.replaced = true;
+    closePhaseOverlay();
+    state = null;
+    render();
+    toast(t('toast.replaced'), 'info');
+  });
+
+  socket.on('error_message', (e) => toast(translateServerError(e.message) || t('err.generic')));
+
+  /* ══════════════════════════ Boot ══════════════════════════ */
+
+  applyStatic();
+  nameInput.value = remember.get('mafia.name');
+  codeInput.value = codeFromUrl();
+  $('codeHint').textContent = t('hint.default');
+  if (codeInput.value) checkRoomHint();
+  renderChatMessages();
+  render();
+  (codeInput.value && nameInput.value ? $('joinBtn') : nameInput).focus({ preventScroll: true });
 })();
+</script>
+
+<!-- PWA: register the service worker once the page has loaded -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+  }
 </script>
 </body>
 </html>
