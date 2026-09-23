@@ -38,6 +38,7 @@
     --mafia: #E0506F;
     --doctor: #4CC7AC;
     --detective: #6EA8F2;
+    --kamikaze: #FF8A3D;
     --town: #D2BE92;
 
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
@@ -54,6 +55,7 @@
   [data-role="Mafia"]       { --role: var(--mafia); }
   [data-role="Doctor"]      { --role: var(--doctor); }
   [data-role="Detective"]   { --role: var(--detective); }
+  [data-role="Kamikaze"]    { --role: var(--kamikaze); }
   [data-role="Townsperson"] { --role: var(--town); }
 
   /* ───────────────────────────── Base ───────────────────────────── */
@@ -215,6 +217,8 @@
   .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
   .btn-primary { background: var(--lamp); color: var(--lamp-ink); border-color: transparent; }
   .btn-primary:hover:not([disabled]) { background: #F5D07A; }
+  .btn-kamikaze { background: var(--kamikaze); color: #2B1200; border-color: transparent; }
+  .btn-kamikaze:hover:not([disabled]) { background: #FFA066; }
   .btn-sm { min-height: 44px; padding: 6px 12px; font-size: 0.95rem; }
   .btn-xs { min-height: 36px; padding: 4px 12px; font-size: 0.85rem; }
   .btn-wide { width: 100%; }
@@ -331,6 +335,21 @@
   }
   body[data-phase="day"] .moon-wrap, body[data-phase="voting"] .moon-wrap { display: none; }
   .status { font-size: 0.95rem; color: var(--lamp); min-height: 1.4em; }
+
+  /* ───────────────────────────── Kamikaze ───────────────────────────── */
+  #kamikazeAction { border-color: rgba(255, 138, 61, 0.5); }
+  #kamikazeAction h3 { color: var(--kamikaze); }
+  .kamikaze-list button { --accent: var(--kamikaze); }
+  #kamikazePanel {
+    border-color: rgba(255, 138, 61, 0.6);
+    background: linear-gradient(180deg, rgba(255, 138, 61, 0.10), var(--panel));
+    animation: bannerIn 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  #kamikazePanel h3 { color: var(--kamikaze); }
+  .kamikaze-timer {
+    font: 700 1.1rem var(--serif); color: var(--kamikaze); font-variant-numeric: tabular-nums;
+  }
+  .kamikaze-timer.urgent { animation: urgentPulse 1s ease-in-out infinite; }
 
   /* ───────────────────────────── Day / vote ───────────────────────────── */
   .announce { border-left: 5px solid var(--lamp); }
@@ -458,6 +477,11 @@
       radial-gradient(70% 50% at 50% 42%, rgba(224, 80, 111, 0.42), transparent 72%),
       linear-gradient(180deg, #1D0E1B 0%, #34142A 100%);
   }
+  .phase-overlay[data-kind="kamikaze"] .po-bg {
+    background:
+      radial-gradient(75% 55% at 50% 45%, rgba(255, 138, 61, 0.48), transparent 72%),
+      linear-gradient(180deg, #2A1206 0%, #170A08 100%);
+  }
   .po-back { position: absolute; inset: 0; }
 
   .po-stars { position: absolute; inset: 0; }
@@ -511,6 +535,8 @@
     animation: poRing 1.4s ease-out infinite; will-change: transform, opacity;
   }
   .po-ring.r2 { animation-delay: 0.7s; }
+  .po-blast .po-mark { background: var(--kamikaze); box-shadow: 0 8px 34px rgba(255, 138, 61, 0.6); font-size: 2.6rem; }
+  .po-blast .po-ring { border-color: rgba(255, 138, 61, 0.9); }
 
   .po-copy { display: grid; gap: 10px; justify-items: center; }
   .po-title {
@@ -521,6 +547,7 @@
   .phase-overlay[data-kind="night"] .po-title { color: #EDE9FF; }
   .phase-overlay[data-kind="day"] .po-title { color: #FFF3D0; }
   .phase-overlay[data-kind="voting"] .po-title { color: #FFE3A0; }
+  .phase-overlay[data-kind="kamikaze"] .po-title { color: #FFD9B3; }
   .po-sub {
     margin: 0; max-width: 30ch; color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45);
     animation: poFadeUp 700ms ease-out 700ms both;
@@ -722,6 +749,11 @@
         <h2 id="dayTitle"></h2>
         <p id="dayText" aria-live="polite"></p>
       </div>
+      <div class="card" id="kamikazeAction" hidden>
+        <h3 data-i18n="kamikaze.actionTitle">Expose &amp; Detonate</h3>
+        <p class="muted" data-i18n="kamikaze.actionDesc">Reveal yourself as the Kamikaze, eliminate yourself, and take one player with you. This cannot be undone.</p>
+        <ul class="list kamikaze-list" id="kamikazeTargets"></ul>
+      </div>
       <div class="card">
         <h3 id="dayHeading"></h3>
         <p class="muted" id="dayStatus"></p>
@@ -748,6 +780,17 @@
       </div>
       <button class="btn btn-primary btn-wide" type="button" id="returnBtn" data-i18n="over.return">Return to Lobby</button>
       <p class="hint center" id="returnHint" data-i18n="over.returnHint" hidden>Only the host can return everyone to the lobby.</p>
+    </section>
+
+    <!-- Kamikaze revenge window (shared: shown on any screen once armed by an elimination) -->
+    <section class="card" id="kamikazePanel" hidden>
+      <h3 data-i18n="kamikaze.revengeTitle">Take Someone With You</h3>
+      <p class="muted" id="kamikazeRevengeDesc"></p>
+      <ul class="list kamikaze-list" id="kamikazeRevengeTargets"></ul>
+      <div class="btn-row">
+        <time class="kamikaze-timer" id="kamikazeTimer"></time>
+        <button class="btn" type="button" id="kamikazeSkipBtn" data-i18n="kamikaze.revengeSkip">Let It Go</button>
+      </div>
     </section>
 
     <!-- Detective notes (shared across night/day) -->
@@ -808,6 +851,14 @@
     <span class="po-ring"></span>
     <span class="po-ring r2"></span>
     <span class="po-mark" aria-hidden="true">!</span>
+  </div>
+</template>
+<template id="tpl-po-kamikaze">
+  <div class="po-back"></div>
+  <div class="po-hero po-alert po-blast">
+    <span class="po-ring"></span>
+    <span class="po-ring r2"></span>
+    <span class="po-mark" aria-hidden="true">💥</span>
   </div>
 </template>
 
@@ -926,12 +977,15 @@
       'role.Mafia': 'Mafia',
       'role.Doctor': 'Doctor',
       'role.Detective': 'Detective',
+      'role.Kamikaze': 'Kamikaze',
       'role.Townsperson': 'Townsperson',
       'role.desc.Mafia': 'Each night, you and your team choose one person to eliminate. By day, blend in and stay out of suspicion.',
       'role.desc.Doctor': 'Each night, choose one person to protect. If the Mafia target them, they survive. You may protect yourself.',
       'role.desc.Detective': 'Each night, investigate one person to learn whether they are Mafia. Use what you learn carefully.',
+      'role.desc.Kamikaze': "You belong to no team. If you are eliminated by the Mafia or voted out, you may immediately take one more player down with you. By day, you may instead expose yourself on purpose to eliminate yourself and one target right away.",
       'role.desc.Townsperson': 'You have no night power. Watch, listen, and use your vote to find the Mafia.',
       'role.goal.Mafia': 'You win when the Mafia equal or outnumber the Town.',
+      'role.goal.Kamikaze': "You have no side to win with. Survive as long as you can, or make your elimination count.",
       'role.goal.Town': 'You win when every Mafia member is eliminated.',
 
       'night.title': 'Night {n}',
