@@ -19,13 +19,13 @@
 <style>
   /* ───────────────────────────── Tokens ───────────────────────────── */
   :root {
-    /* Phase atmospheres (the whole screen shifts with the game phase) */
+    /* Phase atmospheres. The page background itself is a set of cross-fading sky layers (see .sky),
+       these tokens tint the top bar and form fields to match. */
     --neutral: #141827;
-    --night: #0B0E1C;
-    --dusk: #241B2E;
+    --night: #0A0D20;
+    --dusk: #2E2952;
     --verdict: #2C1A25;
     --bg: var(--neutral);
-    --glow: rgba(240, 196, 90, 0.07);
 
     --panel: #1B2036;
     --panel-2: #262C48;
@@ -38,6 +38,7 @@
     --mafia: #E0506F;
     --doctor: #4CC7AC;
     --detective: #6EA8F2;
+    --kamikaze: #FF8A3D;
     --town: #D2BE92;
 
     --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
@@ -45,15 +46,16 @@
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
 
-  body[data-phase="night"]  { --bg: var(--night);   --glow: rgba(110, 168, 242, 0.20); }
-  body[data-phase="day"]    { --bg: var(--dusk);    --glow: rgba(240, 196, 90, 0.20); }
-  body[data-phase="voting"] { --bg: var(--verdict); --glow: rgba(224, 80, 111, 0.20); }
-  body[data-phase="ended"][data-winner="Mafia"] { --bg: var(--verdict); --glow: rgba(224, 80, 111, 0.22); }
-  body[data-phase="ended"][data-winner="Town"]  { --bg: #172321;        --glow: rgba(76, 199, 172, 0.20); }
+  body[data-phase="night"]  { --bg: var(--night); }
+  body[data-phase="day"]    { --bg: var(--dusk); }
+  body[data-phase="voting"] { --bg: var(--verdict); }
+  body[data-phase="ended"][data-winner="Mafia"] { --bg: var(--verdict); }
+  body[data-phase="ended"][data-winner="Town"]  { --bg: #172321; }
 
   [data-role="Mafia"]       { --role: var(--mafia); }
   [data-role="Doctor"]      { --role: var(--doctor); }
   [data-role="Detective"]   { --role: var(--detective); }
+  [data-role="Kamikaze"]    { --role: var(--kamikaze); }
   [data-role="Townsperson"] { --role: var(--town); }
 
   /* ───────────────────────────── Base ───────────────────────────── */
@@ -67,11 +69,57 @@
     min-height: 100dvh;
     font: 400 1rem/1.5 var(--sans);
     color: var(--text);
+    /* Neutral backdrop used in the lobby; the phase skies fade in on top of it. */
     background:
-      radial-gradient(120% 55% at 85% -8%, var(--glow), transparent 62%),
-      var(--bg);
-    background-color: var(--bg);
-    transition: background-color 700ms ease;
+      radial-gradient(120% 55% at 85% -8%, rgba(240, 196, 90, 0.07), transparent 62%),
+      var(--neutral);
+  }
+
+  /* ───────────────────────────── Sky (phase backgrounds) ─────────────────────────────
+     Each phase has its own full-screen layer. Only `opacity` animates, so the change is
+     GPU-composited. The incoming layer fades in on top while the outgoing one stays put
+     until it is fully covered, so the screen never dips back to the neutral colour. */
+  .sky { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  .sky-layer { position: absolute; inset: 0; opacity: 0; transition: opacity 0ms linear 950ms; }
+  .sky-night {
+    background:
+      radial-gradient(1.6px 1.6px at 12% 14%, rgba(255, 255, 255, 0.9), transparent 60%),
+      radial-gradient(1.2px 1.2px at 28% 32%, rgba(255, 255, 255, 0.7), transparent 60%),
+      radial-gradient(1.8px 1.8px at 47% 9%, rgba(255, 255, 255, 0.9), transparent 60%),
+      radial-gradient(1.2px 1.2px at 63% 26%, rgba(255, 255, 255, 0.7), transparent 60%),
+      radial-gradient(1.6px 1.6px at 81% 12%, rgba(255, 255, 255, 0.85), transparent 60%),
+      radial-gradient(1.2px 1.2px at 90% 38%, rgba(255, 255, 255, 0.6), transparent 60%),
+      radial-gradient(1.4px 1.4px at 8% 52%, rgba(255, 255, 255, 0.6), transparent 60%),
+      radial-gradient(1.2px 1.2px at 72% 58%, rgba(255, 255, 255, 0.5), transparent 60%),
+      radial-gradient(90% 45% at 80% -5%, rgba(110, 168, 242, 0.22), transparent 65%),
+      linear-gradient(180deg, #060818 0%, #0B0E24 60%, #120E2A 100%);
+  }
+  .sky-day {
+    background:
+      radial-gradient(75% 45% at 50% 108%, rgba(255, 190, 100, 0.5), transparent 70%),
+      linear-gradient(180deg, #2E2952 0%, #5B3D66 55%, #8F5A4E 100%);
+  }
+  .sky-vote {
+    background:
+      radial-gradient(80% 50% at 50% 0%, rgba(224, 80, 111, 0.28), transparent 70%),
+      linear-gradient(180deg, #2A1626 0%, #3A1830 100%);
+  }
+  .sky-town {
+    background:
+      radial-gradient(80% 50% at 50% 0%, rgba(76, 199, 172, 0.22), transparent 70%),
+      linear-gradient(180deg, #0F2622 0%, #122A2A 100%);
+  }
+  .sky-mafia {
+    background:
+      radial-gradient(80% 50% at 50% 0%, rgba(224, 80, 111, 0.30), transparent 70%),
+      linear-gradient(180deg, #2C1220 0%, #1A0E1A 100%);
+  }
+  body[data-phase="night"] .sky-night,
+  body[data-phase="day"] .sky-day,
+  body[data-phase="voting"] .sky-vote,
+  body[data-phase="ended"][data-winner="Town"] .sky-town,
+  body[data-phase="ended"][data-winner="Mafia"] .sky-mafia {
+    opacity: 1; z-index: 1; transition: opacity 950ms ease;
   }
   h1, h2, h3 { font-family: var(--serif); font-weight: 700; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
   h2 { font-size: 1.75rem; }
@@ -169,6 +217,8 @@
   .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
   .btn-primary { background: var(--lamp); color: var(--lamp-ink); border-color: transparent; }
   .btn-primary:hover:not([disabled]) { background: #F5D07A; }
+  .btn-kamikaze { background: var(--kamikaze); color: #2B1200; border-color: transparent; }
+  .btn-kamikaze:hover:not([disabled]) { background: #FFA066; }
   .btn-sm { min-height: 44px; padding: 6px 12px; font-size: 0.95rem; }
   .btn-xs { min-height: 36px; padding: 4px 12px; font-size: 0.85rem; }
   .btn-wide { width: 100%; }
@@ -228,6 +278,26 @@
     color: var(--lamp); text-align: center; user-select: all;
   }
 
+  /* ───────────────────────────── Role settings ───────────────────────────── */
+  .role-row {
+    display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 12px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .role-swatch { flex: none; width: 8px; height: 34px; border-radius: 6px; background: var(--role, var(--line)); }
+  .role-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .stepper { display: flex; align-items: center; gap: 4px; }
+  .stepper-btn { width: 44px; min-height: 44px; height: 44px; padding: 0; font-size: 1.4rem; line-height: 1; border-radius: 12px; }
+  .stepper-value { min-width: 2.4ch; text-align: center; font: 700 1.3rem var(--serif); font-variant-numeric: tabular-nums; }
+  .role-count { min-width: 2.4ch; text-align: center; font: 700 1.5rem var(--serif); color: var(--role, var(--text)); font-variant-numeric: tabular-nums; }
+  .role-total {
+    text-align: center; font-weight: 600; padding: 10px 12px; border-radius: 12px;
+    background: var(--bg); border: 1px solid var(--line); overflow-wrap: anywhere;
+  }
+  .role-total.ok { color: var(--doctor); border-color: rgba(76, 199, 172, 0.55); }
+  .role-total.bad { color: var(--mafia); border-color: rgba(224, 80, 111, 0.55); }
+  .role-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .start-error { color: var(--mafia); font-weight: 600; }
+
   /* ───────────────────────────── Role card ───────────────────────────── */
   .screen-title { font-size: 1.75rem; }
   .role-stage { display: grid; place-items: center; perspective: 1200px; padding: 6px 0 4px; }
@@ -256,9 +326,30 @@
 
   /* ───────────────────────────── Night ───────────────────────────── */
   .hero-card { text-align: center; justify-items: center; padding: 26px 18px; }
-  .moon { width: 64px; height: 64px; color: var(--detective); }
-  body[data-phase="day"] .moon, body[data-phase="voting"] .moon { display: none; }
+  .moon-wrap { position: relative; width: 64px; height: 64px; }
+  .moon { position: relative; width: 64px; height: 64px; color: var(--detective); }
+  .moon-halo {
+    position: absolute; inset: -55%; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, rgba(110, 168, 242, 0.38), transparent 62%);
+    animation: pulseGlow 2.6s ease-in-out infinite alternate;
+  }
+  body[data-phase="day"] .moon-wrap, body[data-phase="voting"] .moon-wrap { display: none; }
   .status { font-size: 0.95rem; color: var(--lamp); min-height: 1.4em; }
+
+  /* ───────────────────────────── Kamikaze ───────────────────────────── */
+  #kamikazeAction { border-color: rgba(255, 138, 61, 0.5); }
+  #kamikazeAction h3 { color: var(--kamikaze); }
+  .kamikaze-list button { --accent: var(--kamikaze); }
+  #kamikazePanel {
+    border-color: rgba(255, 138, 61, 0.6);
+    background: linear-gradient(180deg, rgba(255, 138, 61, 0.10), var(--panel));
+    animation: bannerIn 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  #kamikazePanel h3 { color: var(--kamikaze); }
+  .kamikaze-timer {
+    font: 700 1.1rem var(--serif); color: var(--kamikaze); font-variant-numeric: tabular-nums;
+  }
+  .kamikaze-timer.urgent { animation: urgentPulse 1s ease-in-out infinite; }
 
   /* ───────────────────────────── Day / vote ───────────────────────────── */
   .announce { border-left: 5px solid var(--lamp); }
@@ -318,11 +409,191 @@
   .modal-body h2 { font-size: 1.5rem; }
   .modal[data-tone="mafia"] h2 { color: var(--mafia); }
   .modal[data-tone="town"] h2 { color: var(--doctor); }
+  .modal[data-tone="kamikaze"] h2 { color: var(--kamikaze); }
   .modal-big { font: 700 1.8rem/1.2 var(--serif); overflow-wrap: anywhere; }
   .modal-big.mafia { color: var(--mafia); }
   .modal-big.town { color: var(--town); }
+  .modal-big.kamikaze { color: var(--kamikaze); }
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-actions .btn { flex: 1; min-width: 0; }
   .vote-line { padding: 6px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
   .vote-line:last-child { border-bottom: 0; }
+
+  /* ───────────────────────────── Motion: screens, headers, banners ─────────────────────────────
+     Everything below animates only `transform` and `opacity` (compositor-friendly on phones),
+     apart from the short blur-in on the overlay title. Animations use `backwards` fill so no
+     lasting transform is left on layout containers. */
+  .screen:not([hidden]) { animation: screenIn 420ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+  .screen-title, #nightTitle, #dayTitle, #overTitle {
+    animation: headerIn 560ms cubic-bezier(0.2, 0.7, 0.2, 1) 60ms backwards;
+  }
+  .announce, .verdict, .hero-card, .dead-banner {
+    animation: bannerIn 560ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms backwards;
+  }
+  .swap-in { animation: swapIn 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  #phaseLabel { display: inline-block; }
+
+  /* Soft glow that pulses a few times when the morning announcement appears */
+  .announce { position: relative; }
+  .announce::after {
+    content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+    box-shadow: 0 0 28px 4px rgba(240, 196, 90, 0.42);
+    opacity: 0; animation: bannerGlow 2.2s ease-in-out 500ms 2 both;
+  }
+  .announce.deadly::after { box-shadow: 0 0 28px 4px rgba(224, 80, 111, 0.48); }
+
+  .phase-pill time.urgent { animation: urgentPulse 1s ease-in-out infinite; }
+
+  /* ───────────────────────────── Phase transition overlay ─────────────────────────────
+     Purely visual: it never takes pointer events, so taps go straight through to the game.
+     Where supported it is a `popover`, which lifts it into the top layer above open dialogs. */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+  .phase-overlay {
+    display: none; position: fixed; inset: 0; z-index: 60;
+    width: 100%; height: 100%; max-width: none; max-height: none;
+    margin: 0; padding: 0; border: 0; overflow: hidden;
+    background: transparent; color: #fff;
+    pointer-events: none; -webkit-user-select: none; user-select: none;
+    contain: layout paint;
+  }
+  .phase-overlay *, .phase-overlay *::before, .phase-overlay *::after { pointer-events: none; }
+  .phase-overlay.is-open { display: block; animation: poLife var(--po-dur, 2800ms) linear both; }
+
+  .po-bg {
+    position: absolute; inset: -6%;
+    animation: poZoom var(--po-dur, 2800ms) ease-out both; will-change: transform;
+  }
+  .phase-overlay[data-kind="night"] .po-bg {
+    background:
+      radial-gradient(90% 60% at 72% 18%, rgba(140, 120, 255, 0.30), transparent 62%),
+      linear-gradient(180deg, #03040F 0%, #0A0A26 55%, #1A0D33 100%);
+  }
+  .phase-overlay[data-kind="day"] .po-bg {
+    background:
+      radial-gradient(80% 55% at 50% 100%, rgba(255, 214, 120, 0.65), transparent 70%),
+      linear-gradient(180deg, #2A2450 0%, #6A3F62 42%, #D9834A 80%, #F6B75C 100%);
+  }
+  .phase-overlay[data-kind="voting"] .po-bg {
+    background:
+      radial-gradient(70% 50% at 50% 42%, rgba(224, 80, 111, 0.42), transparent 72%),
+      linear-gradient(180deg, #1D0E1B 0%, #34142A 100%);
+  }
+  .phase-overlay[data-kind="kamikaze"] .po-bg {
+    background:
+      radial-gradient(75% 55% at 50% 45%, rgba(255, 138, 61, 0.48), transparent 72%),
+      linear-gradient(180deg, #2A1206 0%, #170A08 100%);
+  }
+  .po-back { position: absolute; inset: 0; }
+
+  .po-stars { position: absolute; inset: 0; }
+  .po-star {
+    position: absolute; width: var(--s, 2px); height: var(--s, 2px); border-radius: 50%;
+    background: #fff; opacity: 0.2; will-change: opacity, transform;
+    animation: poTwinkle var(--t, 1.6s) ease-in-out var(--d, 0s) infinite alternate;
+  }
+  .po-horizon {
+    position: absolute; left: -10%; right: -10%; bottom: 0; height: 45%;
+    background: linear-gradient(0deg, rgba(255, 200, 110, 0.55), transparent);
+    animation: poHorizon 1.6s ease-out both; will-change: transform, opacity;
+  }
+
+  .po-stage {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 22px; padding: 24px; text-align: center;
+  }
+  .po-hero { position: relative; width: 110px; height: 110px; will-change: transform, opacity; }
+  .po-halo {
+    position: absolute; inset: -60%; border-radius: 50%;
+    background: radial-gradient(circle, rgba(150, 140, 255, 0.45), transparent 62%);
+    animation: pulseGlow 1.8s ease-in-out infinite alternate;
+  }
+  .po-moon { color: #EDE9FF; animation: poMoonIn 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .po-moon svg { position: relative; width: 100%; height: 100%; }
+
+  .po-sun { animation: poSunRise 1500ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .po-sun .po-halo { background: radial-gradient(circle, rgba(255, 210, 120, 0.6), transparent 62%); }
+  .po-disc {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle at 40% 38%, #FFF6C8 0%, #FFD36E 45%, #FF9B3D 100%);
+    box-shadow: 0 0 60px 20px rgba(255, 190, 90, 0.55);
+  }
+  .po-rays {
+    position: absolute; left: 50%; top: 50%; width: 120vmax; height: 120vmax; margin: -60vmax 0 0 -60vmax;
+    background: repeating-conic-gradient(from 0deg, rgba(255, 226, 150, 0.30) 0deg 5deg, transparent 5deg 15deg);
+    -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 55%);
+    mask-image: radial-gradient(circle, #000 0%, transparent 55%);
+    animation: poRays var(--po-dur, 2800ms) linear both; will-change: transform;
+  }
+
+  .po-alert { animation: poAlertIn 700ms cubic-bezier(0.2, 1.2, 0.3, 1) both; }
+  .po-mark {
+    position: absolute; inset: 7px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--mafia); color: #fff; font: 700 3.4rem/1 var(--serif);
+    box-shadow: 0 8px 30px rgba(224, 80, 111, 0.55);
+  }
+  .po-ring {
+    position: absolute; inset: 7px; border-radius: 50%; border: 3px solid rgba(240, 196, 90, 0.85);
+    animation: poRing 1.4s ease-out infinite; will-change: transform, opacity;
+  }
+  .po-ring.r2 { animation-delay: 0.7s; }
+  .po-blast .po-mark { background: var(--kamikaze); box-shadow: 0 8px 34px rgba(255, 138, 61, 0.6); font-size: 2.6rem; }
+  .po-blast .po-ring { border-color: rgba(255, 138, 61, 0.9); }
+
+  .po-copy { display: grid; gap: 10px; justify-items: center; }
+  .po-title {
+    margin: 0; font: 700 clamp(1.9rem, 8vw, 3rem)/1.12 var(--serif); letter-spacing: -0.01em;
+    text-shadow: 0 2px 24px rgba(0, 0, 0, 0.5);
+    animation: poTitleIn 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 260ms both;
+  }
+  .phase-overlay[data-kind="night"] .po-title { color: #EDE9FF; }
+  .phase-overlay[data-kind="day"] .po-title { color: #FFF3D0; }
+  .phase-overlay[data-kind="voting"] .po-title { color: #FFE3A0; }
+  .phase-overlay[data-kind="kamikaze"] .po-title { color: #FFD9B3; }
+  .po-sub {
+    margin: 0; max-width: 30ch; color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45);
+    animation: poFadeUp 700ms ease-out 700ms both;
+  }
+  .po-timer {
+    position: absolute; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); padding: 4px 14px; border-radius: 999px;
+    background: rgba(0, 0, 0, 0.35); font: 600 0.95rem var(--sans); font-variant-numeric: tabular-nums;
+    animation: poFadeUp 600ms ease-out 900ms both;
+  }
+  .po-timer.urgent { color: #FFB3C0; }
+
+  @keyframes screenIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @keyframes headerIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+  @keyframes bannerIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+  @keyframes swapIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes bannerGlow { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+  @keyframes pulseGlow { from { opacity: 0.4; transform: scale(0.94); } to { opacity: 0.95; transform: scale(1.12); } }
+  @keyframes urgentPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  @keyframes poLife { 0% { opacity: 0; } 16% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes poZoom { from { transform: scale(1.12); } to { transform: scale(1); } }
+  @keyframes poTitleIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); filter: blur(14px); }
+    to { opacity: 1; transform: none; filter: blur(0); }
+  }
+  @keyframes poFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes poMoonIn { from { opacity: 0; transform: translateY(40px) scale(0.75); } to { opacity: 1; transform: none; } }
+  @keyframes poSunRise {
+    0% { opacity: 0; transform: translateY(150px) scale(0.8); }
+    35% { opacity: 1; }
+    100% { opacity: 1; transform: none; }
+  }
+  @keyframes poAlertIn {
+    0% { opacity: 0; transform: scale(0.4); }
+    60% { opacity: 1; transform: scale(1.14); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes poRays { from { transform: rotate(0deg); } to { transform: rotate(50deg); } }
+  @keyframes poRing { from { opacity: 0.9; transform: scale(0.7); } to { opacity: 0; transform: scale(1.9); } }
+  @keyframes poTwinkle { from { opacity: 0.15; transform: scale(0.8); } to { opacity: 1; transform: scale(1.15); } }
+  @keyframes poHorizon { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition: none !important; animation: none !important; }
@@ -334,6 +605,14 @@
 </style>
 </head>
 <body data-phase="none">
+<!-- Phase skies: cross-fading full-screen backgrounds (opacity only) -->
+<div class="sky" aria-hidden="true">
+  <div class="sky-layer sky-night"></div>
+  <div class="sky-layer sky-day"></div>
+  <div class="sky-layer sky-vote"></div>
+  <div class="sky-layer sky-town"></div>
+  <div class="sky-layer sky-mafia"></div>
+</div>
 <noscript><p style="padding:24px">This game needs JavaScript to run. / Для игры нужен JavaScript.</p></noscript>
 
 <!-- Language toggle: fixed in the top corner on every screen -->
@@ -406,9 +685,19 @@
         <h3 id="lobbyCount"></h3>
         <ul class="list" id="lobbyList"></ul>
       </div>
+      <div class="card" id="roleSettings">
+        <h3 data-i18n="roles.title">Role Settings</h3>
+        <p class="muted" id="roleIntro"></p>
+        <ul class="list" id="roleList"></ul>
+        <p class="role-total" id="roleTotal" role="status"></p>
+        <div class="role-foot">
+          <p class="hint" id="roleMode"></p>
+          <button class="btn btn-xs" type="button" id="roleAutoBtn" data-i18n="roles.auto" hidden>Auto-Balance</button>
+        </div>
+      </div>
       <div id="hostControls" class="stack" hidden>
         <button class="btn btn-primary btn-wide" type="button" id="startBtn" data-i18n="lobby.start">Start Game</button>
-        <p class="hint center" id="startHint"></p>
+        <p class="hint center" id="startHint" role="status"></p>
       </div>
       <p class="muted center" id="guestWait" data-i18n="lobby.guestWait" hidden>Waiting for the host to start the game.</p>
     </section>
@@ -440,10 +729,13 @@
     <!-- Screen 4: Night -->
     <section class="screen" id="screen-night" aria-label="Night phase" data-i18n-aria="aria.night" hidden>
       <div class="card hero-card">
-        <svg class="moon" viewBox="0 0 64 64" aria-hidden="true">
-          <defs><mask id="moonMask"><rect width="64" height="64" fill="#fff"/><circle cx="43" cy="26" r="20" fill="#000"/></mask></defs>
-          <circle cx="30" cy="33" r="22" fill="currentColor" mask="url(#moonMask)"/>
-        </svg>
+        <div class="moon-wrap" aria-hidden="true">
+          <span class="moon-halo"></span>
+          <svg class="moon" viewBox="0 0 64 64" aria-hidden="true">
+            <defs><mask id="moonMask"><rect width="64" height="64" fill="#fff"/><circle cx="43" cy="26" r="20" fill="#000"/></mask></defs>
+            <circle cx="30" cy="33" r="22" fill="currentColor" mask="url(#moonMask)"/>
+          </svg>
+        </div>
         <h2 id="nightTitle"></h2>
         <p class="muted" id="nightText"></p>
       </div>
@@ -460,6 +752,11 @@
       <div class="card announce" id="dayAnnounce">
         <h2 id="dayTitle"></h2>
         <p id="dayText" aria-live="polite"></p>
+      </div>
+      <div class="card" id="kamikazeAction" hidden>
+        <h3 data-i18n="kamikaze.actionTitle">Expose &amp; Detonate</h3>
+        <p class="muted" data-i18n="kamikaze.actionDesc">Reveal yourself as the Kamikaze, eliminate yourself, and take one player with you. This cannot be undone.</p>
+        <ul class="list kamikaze-list" id="kamikazeTargets"></ul>
       </div>
       <div class="card">
         <h3 id="dayHeading"></h3>
@@ -489,6 +786,17 @@
       <p class="hint center" id="returnHint" data-i18n="over.returnHint" hidden>Only the host can return everyone to the lobby.</p>
     </section>
 
+    <!-- Kamikaze revenge window (shared: shown on any screen once armed by an elimination) -->
+    <section class="card" id="kamikazePanel" hidden>
+      <h3 data-i18n="kamikaze.revengeTitle">Take Someone With You</h3>
+      <p class="muted" id="kamikazeRevengeDesc"></p>
+      <ul class="list kamikaze-list" id="kamikazeRevengeTargets"></ul>
+      <div class="btn-row">
+        <time class="kamikaze-timer" id="kamikazeTimer"></time>
+        <button class="btn" type="button" id="kamikazeSkipBtn" data-i18n="kamikaze.revengeSkip">Let It Go</button>
+      </div>
+    </section>
+
     <!-- Detective notes (shared across night/day) -->
     <section class="card notes" id="notes" hidden>
       <h3 data-i18n="notes.title">Investigation notes</h3>
@@ -515,9 +823,51 @@
   <div class="modal-body">
     <h2 id="modalTitle"></h2>
     <div id="modalBody" class="stack"></div>
-    <button class="btn btn-primary btn-wide" type="button" id="modalOk">OK</button>
+    <div class="modal-actions">
+      <button class="btn" type="button" id="modalCancel" hidden>Cancel</button>
+      <button class="btn btn-primary" type="button" id="modalOk">OK</button>
+    </div>
   </div>
 </dialog>
+
+<!-- Phase transition overlay (visual only; never intercepts touches) -->
+<div class="phase-overlay" id="phaseOverlay" popover="manual" aria-hidden="true"></div>
+<div class="sr-only" id="phaseAnnouncer" role="status" aria-live="polite"></div>
+
+<template id="tpl-po-night">
+  <div class="po-back"><div class="po-stars"></div></div>
+  <div class="po-hero po-moon">
+    <span class="po-halo"></span>
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <defs><mask id="poMoonMask"><rect width="64" height="64" fill="#fff"/><circle cx="43" cy="26" r="20" fill="#000"/></mask></defs>
+      <circle cx="30" cy="33" r="22" fill="currentColor" mask="url(#poMoonMask)"/>
+    </svg>
+  </div>
+</template>
+<template id="tpl-po-day">
+  <div class="po-back"><div class="po-horizon"></div></div>
+  <div class="po-hero po-sun">
+    <span class="po-rays"></span>
+    <span class="po-halo"></span>
+    <span class="po-disc"></span>
+  </div>
+</template>
+<template id="tpl-po-voting">
+  <div class="po-back"></div>
+  <div class="po-hero po-alert">
+    <span class="po-ring"></span>
+    <span class="po-ring r2"></span>
+    <span class="po-mark" aria-hidden="true">!</span>
+  </div>
+</template>
+<template id="tpl-po-kamikaze">
+  <div class="po-back"></div>
+  <div class="po-hero po-alert po-blast">
+    <span class="po-ring"></span>
+    <span class="po-ring r2"></span>
+    <span class="po-mark" aria-hidden="true">💥</span>
+  </div>
+</template>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -554,6 +904,7 @@
       'lang.label': 'Language',
       'conn.lost': 'Connection lost. Reconnecting...',
       'modal.ok': 'OK',
+      'modal.cancel': 'Cancel',
 
       'aria.lobby': 'Lobby',
       'aria.role': 'Your role',
@@ -594,12 +945,31 @@
       'lobby.remove': 'Remove',
       'lobby.removeAria': 'Remove {name}',
 
+      'roles.title': 'Role Settings',
+      'roles.hostIntro': 'Choose exactly how many of each role to deal. The roles are shuffled at random when the game starts.',
+      'roles.guestIntro': 'The host chooses the roles. Changes appear here live.',
+      'roles.total': 'Total Roles Set: {roles} / Total Players in Lobby: {players}',
+      'roles.auto': 'Auto-Balance',
+      'roles.modeAuto': 'Balanced automatically for the number of players.',
+      'roles.modeCustom': 'Custom setup chosen by the host.',
+      'roles.dec': 'Decrease {role}',
+      'roles.inc': 'Increase {role}',
+      'roles.err.mismatch': 'Role count must match total players in room!',
+      'roles.err.noMafia': 'At least one Mafia is required to start.',
+      'roles.err.mafiaMajority': 'Mafia must be outnumbered by the other roles, or the game would end at once.',
+
       'room.chip': 'Room {code}',
       'phase.lobby': 'Lobby',
       'phase.night': 'Night {n}',
       'phase.day': 'Day {n}',
       'phase.voting': 'Vote, day {n}',
       'phase.ended': 'Game over',
+      'phase.fx.night': 'Night Has Fallen...',
+      'phase.fx.nightSub': 'Night {n}. The town goes to sleep.',
+      'phase.fx.day': 'Daybreak Has Arrived...',
+      'phase.fx.daySub': 'Day {n}. Gather and discuss what happened.',
+      'phase.fx.voting': 'Discussion & Voting Time',
+      'phase.fx.votingSub': 'Choose who to eliminate before the timer runs out.',
       'btn.role': 'My Role',
       'btn.backToGame': 'Back to Game',
       'btn.leave': 'Leave',
@@ -615,13 +985,32 @@
       'role.Mafia': 'Mafia',
       'role.Doctor': 'Doctor',
       'role.Detective': 'Detective',
+      'role.Kamikaze': 'Kamikaze',
       'role.Townsperson': 'Townsperson',
       'role.desc.Mafia': 'Each night, you and your team choose one person to eliminate. By day, blend in and stay out of suspicion.',
       'role.desc.Doctor': 'Each night, choose one person to protect. If the Mafia target them, they survive. You may protect yourself.',
       'role.desc.Detective': 'Each night, investigate one person to learn whether they are Mafia. Use what you learn carefully.',
+      'role.desc.Kamikaze': "You belong to no team. If you are eliminated by the Mafia or voted out, you may immediately take one more player down with you. By day, you may instead expose yourself on purpose to eliminate yourself and one target right away.",
       'role.desc.Townsperson': 'You have no night power. Watch, listen, and use your vote to find the Mafia.',
       'role.goal.Mafia': 'You win when the Mafia equal or outnumber the Town.',
+      'role.goal.Kamikaze': "You have no side to win with. Survive as long as you can, or make your elimination count.",
       'role.goal.Town': 'You win when every Mafia member is eliminated.',
+
+      'kamikaze.actionTitle': 'Expose & Detonate',
+      'kamikaze.actionDesc': 'Reveal yourself as the Kamikaze, eliminate yourself, and take one player with you. This cannot be undone.',
+      'kamikaze.actionPick': 'Detonate',
+      'kamikaze.confirmTitle': 'Detonate?',
+      'kamikaze.confirmBody': 'Self-destruct and take {name} down with you? This cannot be undone.',
+      'kamikaze.confirmOk': 'Detonate',
+      'kamikaze.revengeTitle': 'Take Someone With You',
+      'kamikaze.revengeDesc': 'You were eliminated, but you have one last move. Choose a target before time runs out.',
+      'kamikaze.revengePick': 'Take Down',
+      'kamikaze.revengeSkip': 'Let It Go',
+      'kamikaze.revengeConfirmTitle': 'Take them down with you?',
+      'kamikaze.revengeConfirmBody': 'Take {name} down with you?',
+      'kamikaze.revengeConfirmOk': 'Take Down',
+      'kamikaze.fxTitle': 'Kamikaze Detonated!',
+      'kamikaze.fxSub': '{kamikaze} took {target} down with them.',
 
       'night.title': 'Night {n}',
       'night.text': 'Night has fallen. The town is asleep. Make your move before dawn.',
@@ -670,6 +1059,8 @@
       'cause.mafia': 'Killed by the Mafia',
       'cause.vote': 'Voted out by the town',
       'cause.left': 'Left the game',
+      'cause.kamikaze': 'Taken down by the Kamikaze',
+      'cause.kamikazeSelf': 'Self-destructed',
       'cause.survived': 'Survived',
 
       'voteRes.eliminated': 'The town has spoken',
@@ -682,6 +1073,7 @@
       'elim.title': 'You have been eliminated',
       'elim.mafia': 'The Mafia killed you during the night.',
       'elim.vote': 'The town voted you out.',
+      'elim.kamikaze': 'A Kamikaze detonated and took you down with them.',
       'elim.default': 'You are out of the game.',
       'elim.note': 'You can keep watching and chat with other dead players.',
       'elim.keep': 'Keep Watching',
@@ -740,6 +1132,7 @@
       'lang.label': 'Язык',
       'conn.lost': 'Соединение потеряно. Переподключаемся...',
       'modal.ok': 'OK',
+      'modal.cancel': 'Отмена',
 
       'aria.lobby': 'Лобби',
       'aria.role': 'Ваша роль',
@@ -780,12 +1173,31 @@
       'lobby.remove': 'Убрать',
       'lobby.removeAria': 'Убрать игрока {name}',
 
+      'roles.title': 'Настройка ролей',
+      'roles.hostIntro': 'Задайте, сколько карт каждой роли раздать. При старте роли перемешиваются случайным образом.',
+      'roles.guestIntro': 'Роли выбирает хост. Изменения появляются здесь сразу.',
+      'roles.total': 'Всего ролей: {roles} / Игроков в лобби: {players}',
+      'roles.auto': 'Авто-баланс',
+      'roles.modeAuto': 'Роли подобраны автоматически под число игроков.',
+      'roles.modeCustom': 'Настройка задана хостом вручную.',
+      'roles.dec': 'Уменьшить: {role}',
+      'roles.inc': 'Увеличить: {role}',
+      'roles.err.mismatch': 'Число ролей должно совпадать с числом игроков в комнате!',
+      'roles.err.noMafia': 'Для старта нужна хотя бы одна Мафия.',
+      'roles.err.mafiaMajority': 'Мафии должно быть меньше, чем остальных ролей, иначе игра закончится сразу.',
+
       'room.chip': 'Комната {code}',
       'phase.lobby': 'Лобби',
       'phase.night': 'Ночь {n}',
       'phase.day': 'День {n}',
       'phase.voting': 'Голосование, день {n}',
       'phase.ended': 'Игра окончена',
+      'phase.fx.night': 'Наступила ночь...',
+      'phase.fx.nightSub': 'Ночь {n}. Город засыпает.',
+      'phase.fx.day': 'Наступил рассвет...',
+      'phase.fx.daySub': 'День {n}. Соберитесь и обсудите случившееся.',
+      'phase.fx.voting': 'Время обсуждения и голосования',
+      'phase.fx.votingSub': 'Выберите, кого исключить, пока не вышло время.',
       'btn.role': 'Моя роль',
       'btn.backToGame': 'Назад в игру',
       'btn.leave': 'Выйти',
@@ -801,13 +1213,32 @@
       'role.Mafia': 'Мафия',
       'role.Doctor': 'Доктор',
       'role.Detective': 'Детектив',
+      'role.Kamikaze': 'Камикадзе',
       'role.Townsperson': 'Мирный житель',
       'role.desc.Mafia': 'Каждую ночь вы вместе с командой выбираете, кого убрать. Днём держитесь как все и не вызывайте подозрений.',
       'role.desc.Doctor': 'Каждую ночь выбирайте, кого защитить. Если мафия нацелится на этого игрока, он выживет. Можно защитить и себя.',
       'role.desc.Detective': 'Каждую ночь проверяйте одного игрока и узнавайте, мафия он или нет. Распоряжайтесь этой информацией осторожно.',
+      'role.desc.Kamikaze': 'Вы вне команд. Если вас убьёт мафия или исключит голосование, вы можете сразу забрать с собой ещё одного игрока. Днём вы можете вместо этого сами раскрыться и подорваться, устранив себя и одну выбранную цель.',
       'role.desc.Townsperson': 'У вас нет ночных способностей. Наблюдайте, слушайте и голосуйте, чтобы вычислить мафию.',
       'role.goal.Mafia': 'Вы побеждаете, когда мафии становится не меньше, чем мирных жителей.',
+      'role.goal.Kamikaze': 'У вас нет своей стороны в игре. Продержитесь как можно дольше — или сделайте так, чтобы ваше выбывание что-то решило.',
       'role.goal.Town': 'Вы побеждаете, когда вся мафия устранена.',
+
+      'kamikaze.actionTitle': 'Раскрыться и взорваться',
+      'kamikaze.actionDesc': 'Раскройте себя как Камикадзе, устраните себя и заберите с собой одного игрока. Это необратимо.',
+      'kamikaze.actionPick': 'Взорвать',
+      'kamikaze.confirmTitle': 'Взорваться?',
+      'kamikaze.confirmBody': 'Подорваться и забрать с собой игрока {name}? Это необратимо.',
+      'kamikaze.confirmOk': 'Взорваться',
+      'kamikaze.revengeTitle': 'Заберите кого-то с собой',
+      'kamikaze.revengeDesc': 'Вы выбыли, но у вас есть последний ход. Выберите цель, пока не вышло время.',
+      'kamikaze.revengePick': 'Забрать с собой',
+      'kamikaze.revengeSkip': 'Отпустить',
+      'kamikaze.revengeConfirmTitle': 'Забрать эту цель с собой?',
+      'kamikaze.revengeConfirmBody': 'Забрать с собой игрока {name}?',
+      'kamikaze.revengeConfirmOk': 'Забрать с собой',
+      'kamikaze.fxTitle': 'Камикадзе взорвался!',
+      'kamikaze.fxSub': '{kamikaze} и {target} гибнут вместе.',
 
       'night.title': 'Ночь {n}',
       'night.text': 'Наступила ночь. Город спит. Сделайте свой ход до рассвета.',
@@ -856,6 +1287,8 @@
       'cause.mafia': 'Жертва мафии',
       'cause.vote': 'Исключение голосованием',
       'cause.left': 'Выход из игры',
+      'cause.kamikaze': 'Жертва камикадзе',
+      'cause.kamikazeSelf': 'Самоподрыв',
       'cause.survived': 'Остаётся в игре',
 
       'voteRes.eliminated': 'Город принял решение',
@@ -868,6 +1301,7 @@
       'elim.title': 'Вы выбыли из игры',
       'elim.mafia': 'Мафия убила вас этой ночью.',
       'elim.vote': 'Город исключил вас голосованием.',
+      'elim.kamikaze': 'Камикадзе взорвался и забрал вас с собой.',
       'elim.default': 'Вы выбыли из игры.',
       'elim.note': 'Можно продолжать наблюдать и общаться с другими выбывшими.',
       'elim.keep': 'Продолжить наблюдение',
@@ -954,6 +1388,18 @@
       'srv.voteSelf': 'Нельзя голосовать за себя.',
       'srv.notOver': 'Игра ещё не закончена.',
       'srv.rateLimit': 'Слишком часто. Помедленнее.',
+      'srv.rolesMismatch': 'Число ролей должно совпадать с числом игроков в комнате!',
+      'srv.noMafia': 'Нужна хотя бы одна Мафия.',
+      'srv.mafiaMajority': 'Мафии должно быть меньше, чем остальных ролей.',
+      'srv.rolesLobbyOnly': 'Роли можно менять только в лобби.',
+      'srv.rolesMissing': 'Не указаны настройки ролей.',
+      'srv.roleCounts': 'Число ролей должно быть целым числом от 0 до {n}.',
+      'srv.kamikazeDayOnly': 'Взорваться можно только днём.',
+      'srv.notKamikazeDetonate': 'Взорваться может только Камикадзе.',
+      'srv.noRevenge': 'У вас нет доступного ответного удара.',
+      'srv.notKamikazeUse': 'Эту способность может использовать только Камикадзе.',
+      'srv.notActive': 'Игра сейчас не идёт.',
+      'srv.targetSelf': 'Нельзя выбрать себя в качестве цели.',
       'srv.internal': 'Внутренняя ошибка сервера.',
     },
   };
@@ -991,6 +1437,17 @@
     'You cannot vote for yourself.': 'srv.voteSelf',
     'The game is not over yet.': 'srv.notOver',
     'You are doing that too fast. Slow down.': 'srv.rateLimit',
+    'Role count must match total players in room!': 'srv.rolesMismatch',
+    'At least one Mafia is required.': 'srv.noMafia',
+    'Mafia must be outnumbered by the other roles.': 'srv.mafiaMajority',
+    'Roles can only be changed in the lobby.': 'srv.rolesLobbyOnly',
+    'Role settings are missing.': 'srv.rolesMissing',
+    'You can only detonate during the day.': 'srv.kamikazeDayOnly',
+    'Only the Kamikaze can detonate.': 'srv.notKamikazeDetonate',
+    'You have no revenge action available.': 'srv.noRevenge',
+    'Only the Kamikaze can use this ability.': 'srv.notKamikazeUse',
+    'The game is not active.': 'srv.notActive',
+    'You cannot target yourself.': 'srv.targetSelf',
     'Internal server error.': 'srv.internal',
   };
 
@@ -1017,6 +1474,13 @@
   const MIN_NAME = 2;
   const MAX_NAME = 16;
   const IN_GAME = new Set(['night', 'day', 'voting']);
+  /** Order of the role counters (also the keys of the `roles` payload sent to the server). */
+  const ROLE_ORDER = ['Mafia', 'Detective', 'Doctor', 'Kamikaze', 'Townsperson'];
+
+  /* Host edits to the role counts are batched briefly; while any are pending or unacknowledged,
+     incoming role settings must not overwrite the host's local numbers. */
+  let roleSendTimer = null;
+  let roleInFlight = 0;
 
   const NIGHT_ACTIONS = {
     Mafia: { accent: 'var(--mafia)', targets: (me, p) => p.alive && p.role !== 'Mafia' },
@@ -1071,6 +1535,8 @@
     if (m) return t('srv.nameShort', { n: m[1] });
     m = message.match(/^At least (\d+) connected players are required to start\.$/);
     if (m) return t('srv.needPlayers', { n: m[1] });
+    m = message.match(/^Role counts must be whole numbers from 0 to (\d+)\.$/);
+    if (m) return t('srv.roleCounts', { n: m[1] });
     if (/^That (target|suspect) is not a living player\.$/.test(message)) return t('srv.notLiving');
     return message;
   }
@@ -1120,7 +1586,17 @@
     if (!state) checkRoomHint();
     render();
     renderChatMessages();
+    refreshOverlayText();
     if (currentModal && modalIsOpen()) fillModal(currentModal);
+  }
+
+  /** Sets text and replays a short fade-up, but only when the text really changed. */
+  function swapText(node, text) {
+    if (node.textContent === text) return;
+    node.textContent = text;
+    node.classList.remove('swap-in');
+    void node.offsetWidth; // force a reflow so the CSS animation restarts
+    node.classList.add('swap-in');
   }
 
   function toast(message, kind = 'error') {
@@ -1229,6 +1705,9 @@
     $('modalTitle').textContent = m.title();
     $('modalBody').replaceChildren(...[].concat(m.body()));
     $('modalOk').textContent = m.ok ? m.ok() : t('modal.ok');
+    const cancelBtn = $('modalCancel');
+    cancelBtn.hidden = !m.cancel;
+    if (m.cancel) cancelBtn.textContent = m.cancel();
     modal.dataset.tone = m.tone || '';
   }
 
@@ -1242,9 +1721,20 @@
     $('modalOk').focus();
   }
 
-  $('modalOk').addEventListener('click', () => {
+  function closeModal() {
     if (typeof modal.close === 'function') modal.close();
     else { modal.removeAttribute('open'); nextModal(); }
+  }
+
+  $('modalOk').addEventListener('click', () => {
+    const m = currentModal;
+    closeModal();
+    if (m && m.onOk) m.onOk();
+  });
+  $('modalCancel').addEventListener('click', () => {
+    const m = currentModal;
+    closeModal();
+    if (m && m.onCancel) m.onCancel();
   });
   modal.addEventListener('close', nextModal);
 
@@ -1324,7 +1814,7 @@
     if (!state) return;
     $('roomChip').textContent = t('room.chip', { code: state.code });
     const keys = { lobby: 'phase.lobby', night: 'phase.night', day: 'phase.day', voting: 'phase.voting', ended: 'phase.ended' };
-    $('phaseLabel').textContent = keys[state.phase] ? t(keys[state.phase], { n: state.day }) : '';
+    swapText($('phaseLabel'), keys[state.phase] ? t(keys[state.phase], { n: state.day }) : '');
     $('roleBtn').hidden = !(IN_GAME.has(state.phase) && !!state.you.role);
     $('roleBtn').textContent = ui.showRoleCard ? t('btn.backToGame') : t('btn.role');
   }
@@ -1352,9 +1842,126 @@
     const connected = state.players.filter((p) => p.connected).length;
     $('hostControls').hidden = !me.isHost;
     $('guestWait').hidden = me.isHost;
-    $('startHint').textContent = connected >= state.minPlayers
-      ? t('lobby.hintReady', { n: connected })
-      : t('lobby.hintWaiting', { min: state.minPlayers, n: connected });
+
+    renderRoleSettings();
+
+    // Start is only possible when the role setup is valid; the reason is always shown.
+    const problem = currentRoleProblem();
+    $('startBtn').disabled = !!problem;
+    const hint = $('startHint');
+    hint.classList.toggle('start-error', !!problem && problem !== 'minPlayers');
+    if (problem === 'minPlayers') hint.textContent = t('lobby.hintWaiting', { min: state.minPlayers, n: connected });
+    else if (problem) hint.textContent = t(`roles.err.${problem}`);
+    else hint.textContent = t('lobby.hintReady', { n: connected });
+  }
+
+  /* ── Lobby: role settings (host edits, everyone sees them live) ── */
+  const sumCounts = (counts) => ROLE_ORDER.reduce((sum, role) => sum + (counts[role] || 0), 0);
+
+  /** Mirrors the server's checks; the server stays the authority when the game actually starts. */
+  function roleProblem(counts, connected, minPlayers) {
+    if (connected < minPlayers) return 'minPlayers';
+    const total = sumCounts(counts);
+    if (total !== connected) return 'mismatch';
+    if (counts.Mafia < 1) return 'noMafia';
+    if (counts.Mafia >= total - counts.Mafia) return 'mafiaMajority';
+    return null;
+  }
+
+  function currentRoleProblem() {
+    const rs = state && state.roleSettings;
+    if (!rs) return null;
+    return roleProblem(rs.counts, state.players.filter((p) => p.connected).length, state.minPlayers);
+  }
+
+  const rolesLocked = () => roleSendTimer !== null || roleInFlight > 0;
+
+  /** While the host is mid-edit the local numbers win, so a late echo can't make them jump back. */
+  function incomingRoleSettings(next) {
+    if (rolesLocked() && state && state.roleSettings) {
+      return { ...next, counts: state.roleSettings.counts, custom: state.roleSettings.custom };
+    }
+    return next;
+  }
+
+  function onRoleUpdateAck(res) {
+    roleInFlight = Math.max(0, roleInFlight - 1);
+    if (res && res.ok) {
+      if (!rolesLocked() && state && state.roleSettings) { state.roleSettings = res.roles; render(); }
+    } else {
+      send('request_state', {}); // the server rejected it: fall back to the server's numbers
+    }
+  }
+
+  function queueRoleUpdate() {
+    clearTimeout(roleSendTimer);
+    roleSendTimer = setTimeout(() => {
+      roleSendTimer = null;
+      if (!state || !state.roleSettings) return;
+      roleInFlight += 1;
+      send('update_roles', { roles: { ...state.roleSettings.counts } }, onRoleUpdateAck);
+    }, 90);
+  }
+
+  function stepRole(role, delta) {
+    const rs = state && state.roleSettings;
+    if (!rs || !state.you.isHost) return;
+    const value = Math.max(0, Math.min(state.maxPlayers, rs.counts[role] + delta));
+    if (value === rs.counts[role]) return;
+    state.roleSettings = { ...rs, counts: { ...rs.counts, [role]: value }, custom: true };
+    render();
+    queueRoleUpdate();
+  }
+
+  function autoBalance() {
+    if (!state || !state.you.isHost) return;
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    roleInFlight += 1;
+    send('update_roles', { auto: true }, onRoleUpdateAck);
+  }
+
+  function renderRoleSettings() {
+    const rs = state.roleSettings;
+    $('roleSettings').hidden = !rs;
+    if (!rs) return;
+
+    const isHost = state.you.isHost;
+    const connected = state.players.filter((p) => p.connected).length;
+    const total = sumCounts(rs.counts);
+
+    $('roleIntro').textContent = t(isHost ? 'roles.hostIntro' : 'roles.guestIntro');
+
+    $('roleList').replaceChildren(...ROLE_ORDER.map((role) => {
+      const value = rs.counts[role];
+      const control = isHost
+        ? el('div', { class: 'stepper' },
+            el('button', {
+              class: 'btn stepper-btn', type: 'button', disabled: value <= 0,
+              'aria-label': t('roles.dec', { role: roleName(role) }),
+              onclick: () => stepRole(role, -1),
+            }, '\u2212'),
+            el('span', { class: 'stepper-value', 'aria-live': 'polite', text: String(value) }),
+            el('button', {
+              class: 'btn stepper-btn', type: 'button', disabled: value >= state.maxPlayers,
+              'aria-label': t('roles.inc', { role: roleName(role) }),
+              onclick: () => stepRole(role, 1),
+            }, '+'))
+        : el('span', { class: 'role-count', text: String(value) });
+      return el('li', { class: 'role-row', 'data-role': role },
+        el('span', { class: 'role-swatch', 'aria-hidden': 'true' }),
+        el('span', { class: 'role-name', text: roleName(role) }),
+        control);
+    }));
+
+    const totalEl = $('roleTotal');
+    totalEl.textContent = t('roles.total', { roles: total, players: connected });
+    totalEl.classList.toggle('ok', total === connected && connected > 0);
+    totalEl.classList.toggle('bad', total !== connected);
+
+    $('roleMode').textContent = t(rs.custom ? 'roles.modeCustom' : 'roles.modeAuto');
+    $('roleAutoBtn').hidden = !isHost;
+    $('roleAutoBtn').disabled = !rs.custom;
   }
 
   /* ── Screen 3: Role card ── */
@@ -1364,7 +1971,7 @@
     $('roleCard').classList.toggle('revealed', ui.roleRevealed);
     $('roleName').textContent = roleName(role);
     $('roleDesc').textContent = t(`role.desc.${role}`);
-    $('roleGoal').textContent = t(role === 'Mafia' ? 'role.goal.Mafia' : 'role.goal.Town');
+    $('roleGoal').textContent = t(role === 'Mafia' ? 'role.goal.Mafia' : role === 'Kamikaze' ? 'role.goal.Kamikaze' : 'role.goal.Town');
     $('roleFront').setAttribute('aria-hidden', String(!ui.roleRevealed));
     $('roleBack').setAttribute('aria-hidden', String(ui.roleRevealed));
     $('toggleRoleBtn').textContent = ui.roleRevealed ? t('role.hide') : t('role.show');
@@ -1440,7 +2047,7 @@
     else if (locked) status = t('status.locked', { name: nameOf(myTarget) });
     else if (myTarget) status = t('status.chose', { name: nameOf(myTarget) }) + (role === 'Detective' ? '' : t('status.change'));
     else status = t('status.pick');
-    $('nightStatus').textContent = status;
+    swapText($('nightStatus'), status);
   }
 
   /* ── Screen 5: Day / Voting ── */
@@ -1457,10 +2064,10 @@
     $('dayText').textContent = outcome ? nightResultText(outcome.killed) : '';
     $('dayAnnounce').classList.toggle('deadly', !!(outcome && outcome.killed));
 
-    $('dayHeading').textContent = voting ? t('day.whoMafia') : t('day.discussion');
-    $('dayStatus').textContent = voting
+    swapText($('dayHeading'), voting ? t('day.whoMafia') : t('day.discussion'));
+    swapText($('dayStatus'), voting
       ? t('day.statusVoting', { voted: v.voted.length, total: v.total })
-      : t('day.statusDiscussion');
+      : t('day.statusDiscussion'));
 
     const alive = state.players.filter((p) => p.alive);
     $('voteList').replaceChildren(...alive.map((p) => {
@@ -1499,6 +2106,8 @@
     if (p.deathCause === 'mafia') return t('cause.mafia');
     if (p.deathCause === 'vote') return t('cause.vote');
     if (p.deathCause === 'left') return t('cause.left');
+    if (p.deathCause === 'kamikaze') return t('cause.kamikaze');
+    if (p.deathCause === 'kamikaze_self') return t('cause.kamikazeSelf');
     return null;
   }
 
@@ -1585,13 +2194,106 @@
 
   function tick() {
     const timer = $('phaseTimer');
-    if (!state || !state.phaseEndsAt) { timer.hidden = true; return; }
+    if (!state || !state.phaseEndsAt) {
+      timer.hidden = true;
+      if (overlayTimerEl) overlayTimerEl.hidden = true;
+      return;
+    }
     const remain = Math.max(0, Math.ceil((state.phaseEndsAt - (Date.now() + clockOffset)) / 1000));
+    const label = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
     timer.hidden = false;
-    timer.textContent = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
+    timer.textContent = label;
     timer.classList.toggle('urgent', remain <= 10);
+    // The overlay shows the very same countdown, so nothing drifts while the scene plays.
+    if (overlayTimerEl) {
+      overlayTimerEl.hidden = false;
+      overlayTimerEl.textContent = label;
+      overlayTimerEl.classList.toggle('urgent', remain <= 10);
+    }
   }
   setInterval(tick, 250);
+
+  /* ══════════════════════════ Phase transition overlay ══════════════════════════
+     Plays when the server announces a new phase (`phase_changed`). It is purely visual and
+     never intercepts touches, and the countdown / socket state keep updating underneath. */
+
+  const overlay = $('phaseOverlay');
+  const PHASE_FX = {
+    night: { title: 'phase.fx.night', sub: 'phase.fx.nightSub' },
+    day: { title: 'phase.fx.day', sub: 'phase.fx.daySub' },
+    voting: { title: 'phase.fx.voting', sub: 'phase.fx.votingSub' },
+  };
+  const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const PHASE_FX_MS = REDUCED_MOTION ? 1600 : 2800;
+  const supportsPopover = typeof overlay.showPopover === 'function';
+  let overlayTimeout = null;
+  let overlayTimerEl = null; // the <time> inside the running scene (null when no scene is playing)
+  let overlayScene = null;   // { phase, day } of the scene that is playing, for live retranslation
+
+  function refreshOverlayText() {
+    if (!overlayScene || !overlay.classList.contains('is-open')) return;
+    const fx = PHASE_FX[overlayScene.phase];
+    const title = overlay.querySelector('.po-title');
+    const sub = overlay.querySelector('.po-sub');
+    if (title) title.textContent = t(fx.title);
+    if (sub) sub.textContent = t(fx.sub, { n: overlayScene.day });
+    $('phaseAnnouncer').textContent = t(fx.title);
+  }
+
+  function starField(count) {
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < count; i++) {
+      const size = (1 + Math.random() * 2.4).toFixed(1);
+      frag.append(el('span', {
+        class: 'po-star',
+        style: `left:${(Math.random() * 100).toFixed(1)}%;top:${(Math.random() * 90).toFixed(1)}%;`
+          + `--s:${size}px;--d:${(Math.random() * 1.6).toFixed(2)}s;--t:${(1.1 + Math.random() * 1.4).toFixed(2)}s`,
+      }));
+    }
+    return frag;
+  }
+
+  function closePhaseOverlay() {
+    clearTimeout(overlayTimeout);
+    overlayTimeout = null;
+    overlay.classList.remove('is-open');
+    if (supportsPopover) { try { overlay.hidePopover(); } catch { /* not open */ } }
+    overlay.replaceChildren();
+    overlayTimerEl = null;
+    overlayScene = null;
+  }
+
+  function playPhaseTransition(phase, day) {
+    const fx = PHASE_FX[phase];
+    if (!fx) { closePhaseOverlay(); return; } // lobby / game over: no splash, and drop any running one
+    $('phaseAnnouncer').textContent = t(fx.title); // screen readers get the message even without visuals
+    if (document.hidden) return;
+
+    closePhaseOverlay(); // a newer phase replaces a scene that is still playing
+
+    const scene = $(`tpl-po-${phase}`).content.cloneNode(true);
+    const stars = scene.querySelector('.po-stars');
+    if (stars) stars.append(starField(30));
+
+    overlayTimerEl = el('time', { class: 'po-timer' });
+    overlay.dataset.kind = phase;
+    overlay.style.setProperty('--po-dur', `${PHASE_FX_MS}ms`);
+    overlay.replaceChildren(
+      el('div', { class: 'po-bg' }),
+      scene.querySelector('.po-back'),
+      el('div', { class: 'po-stage' },
+        scene.querySelector('.po-hero'),
+        el('div', { class: 'po-copy' },
+          el('h2', { class: 'po-title', text: t(fx.title) }),
+          el('p', { class: 'po-sub', text: t(fx.sub, { n: day }) }))),
+      overlayTimerEl);
+
+    overlayScene = { phase, day };
+    overlay.classList.add('is-open');
+    if (supportsPopover) { try { overlay.showPopover(); } catch { /* already open */ } }
+    tick(); // fill the timer right away
+    overlayTimeout = setTimeout(closePhaseOverlay, PHASE_FX_MS + 100);
+  }
 
   /* ══════════════════════════ Join / create / leave ══════════════════════════ */
 
@@ -1651,6 +2353,10 @@
 
   function resetToJoinScreen() {
     store.del('mafia.session');
+    closePhaseOverlay();
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    roleInFlight = 0;
     state = null;
     ui.showRoleCard = false;
     ui.roleRevealed = false;
@@ -1740,13 +2446,22 @@
 
   $('startBtn').addEventListener('click', () => {
     if (!state) return;
-    const connected = state.players.filter((p) => p.connected).length;
-    if (connected < state.minPlayers) {
-      toast(t('err.needPlayers', { min: state.minPlayers, n: connected }));
+    const problem = currentRoleProblem();
+    if (problem) { // the button is normally disabled; this guards against stale clicks
+      const connected = state.players.filter((p) => p.connected).length;
+      toast(problem === 'minPlayers'
+        ? t('err.needPlayers', { min: state.minPlayers, n: connected })
+        : t(`roles.err.${problem}`));
       return;
     }
-    send('start_game', {});
+    // With a hand-made setup, send the counts along so the start can never race an unsent edit.
+    const rs = state.roleSettings;
+    const payload = rs && rs.custom ? { roles: { ...rs.counts } } : {};
+    clearTimeout(roleSendTimer);
+    roleSendTimer = null;
+    send('start_game', payload);
   });
+  $('roleAutoBtn').addEventListener('click', autoBalance);
 
   $('advanceBtn').addEventListener('click', () => send('advance_phase', {}));
   $('skipVoteBtn').addEventListener('click', () => castVote(null));
@@ -1769,6 +2484,7 @@
 
   // Hide the role whenever the tab is backgrounded (e.g. locking the phone).
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden) closePhaseOverlay();
     if (document.hidden && ui.roleRevealed) { ui.roleRevealed = false; render(); }
   });
 
@@ -1799,7 +2515,15 @@
       renderChatMessages();
     }
     ui.prevPhase = s.phase;
+    if (s.roleSettings) s.roleSettings = incomingRoleSettings(s.roleSettings);
     state = s;
+    render();
+  });
+
+  // Live sync: the host's role counters reach everyone in the lobby as they change.
+  socket.on('roles_updated', (settings) => {
+    if (!state || state.phase !== 'lobby') return;
+    state.roleSettings = incomingRoleSettings(settings);
     render();
   });
 
@@ -1813,8 +2537,12 @@
 
   socket.on('phase_changed', (p) => {
     clockOffset = p.serverTime - Date.now();
+    // Use the new deadline immediately (room_state follows moments later), so the countdown is
+    // correct from the first frame of the transition.
+    if (state) state.phaseEndsAt = p.endsAt;
     // Night keeps the role card open (it opens at game start); any later phase closes it.
     if (p.phase !== 'night') { ui.showRoleCard = false; ui.roleRevealed = false; }
+    playPhaseTransition(p.phase, p.day);
   });
 
   // The announcement text is rebuilt on the client from structured data, so it follows the active language.
@@ -1901,6 +2629,7 @@
 
   socket.on('session_replaced', () => {
     ui.replaced = true;
+    closePhaseOverlay();
     state = null;
     render();
     toast(t('toast.replaced'), 'info');
