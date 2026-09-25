@@ -217,6 +217,8 @@
   .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
   .btn-primary { background: var(--lamp); color: var(--lamp-ink); border-color: transparent; }
   .btn-primary:hover:not([disabled]) { background: #F5D07A; }
+  .btn-kamikaze { background: var(--kamikaze); color: #240D02; border-color: transparent; }
+  .btn-kamikaze:hover:not([disabled]) { background: #FFA867; }
   .btn-kamikaze { background: var(--kamikaze); color: #2B1200; border-color: transparent; }
   .btn-kamikaze:hover:not([disabled]) { background: #FFA066; }
   .btn-sm { min-height: 44px; padding: 6px 12px; font-size: 0.95rem; }
@@ -1804,6 +1806,7 @@
       if (screen === 'over') renderOver();
     }
     renderDeadBanner(screen);
+    renderKamikazePanel();
     renderNotes(screen);
     renderChat(screen);
     tick();
@@ -2056,6 +2059,8 @@
     const voting = state.phase === 'voting';
     const v = state.vote || { counts: {}, skip: 0, voted: [], total: 0, myVote: null };
 
+    renderKamikazeAction(me);
+
     let outcome = null;
     if (ui.dayEvent && ui.dayEvent.day === state.day) outcome = { killed: ui.dayEvent.killed };
     else outcome = parseNightLog();
@@ -2118,6 +2123,69 @@
         render();
       }
     });
+  }
+
+  /* ── Kamikaze ability: proactive detonation and the post-elimination revenge window ──
+     Both paths go through the same server event, `use_kamikaze_ability`, and both are gated
+     behind a confirmation modal before anything is sent — a self-destruct is never one tap away. */
+
+  function useKamikazeAbility(targetId) {
+    send('use_kamikaze_ability', { targetId }, () => render());
+  }
+
+  function confirmKamikazeDetonate(target) {
+    showModal({
+      title: () => t('kamikaze.confirmTitle'),
+      tone: 'kamikaze',
+      body: () => [el('p', { class: 'modal-big kamikaze', text: t('kamikaze.confirmBody', { name: target.name }) })],
+      ok: () => t('kamikaze.confirmOk'),
+      cancel: () => t('modal.cancel'),
+      onOk: () => useKamikazeAbility(target.id),
+    });
+  }
+
+  function confirmKamikazeRevenge(target) {
+    showModal({
+      title: () => t('kamikaze.revengeConfirmTitle'),
+      tone: 'kamikaze',
+      body: () => [el('p', { class: 'modal-big kamikaze', text: t('kamikaze.revengeConfirmBody', { name: target.name }) })],
+      ok: () => t('kamikaze.revengeConfirmOk'),
+      cancel: () => t('modal.cancel'),
+      onOk: () => useKamikazeAbility(target.id),
+    });
+  }
+
+  /** Proactive "Expose & Detonate" card, shown on the day/voting screen only to a living Kamikaze. */
+  function renderKamikazeAction(me) {
+    const panel = $('kamikazeAction');
+    const show = me.role === 'Kamikaze' && me.alive;
+    panel.hidden = !show;
+    if (!show) return;
+
+    const targets = state.players.filter((p) => p.alive && p.id !== me.id);
+    $('kamikazeTargets').replaceChildren(...targets.map((p) => playerRow(p, {
+      button: el('button', {
+        class: 'btn btn-sm btn-kamikaze', type: 'button',
+        onclick: () => confirmKamikazeDetonate(p),
+      }, t('kamikaze.actionPick')),
+    })));
+  }
+
+  /** Shared revenge-window panel: appears on whichever screen is active once a Kamikaze is armed. */
+  function renderKamikazePanel() {
+    const panel = $('kamikazePanel');
+    const pending = state && state.you.kamikazeRevenge;
+    panel.hidden = !pending;
+    if (!pending) return;
+
+    $('kamikazeRevengeDesc').textContent = t('kamikaze.revengeDesc');
+    const targets = state.players.filter((p) => p.alive);
+    $('kamikazeRevengeTargets').replaceChildren(...targets.map((p) => playerRow(p, {
+      button: el('button', {
+        class: 'btn btn-sm btn-kamikaze', type: 'button',
+        onclick: () => confirmKamikazeRevenge(p),
+      }, t('kamikaze.revengePick')),
+    })));
   }
 
   /* ── Screen 6: Game over ── */
@@ -2197,18 +2265,27 @@
     if (!state || !state.phaseEndsAt) {
       timer.hidden = true;
       if (overlayTimerEl) overlayTimerEl.hidden = true;
-      return;
+    } else {
+      const remain = Math.max(0, Math.ceil((state.phaseEndsAt - (Date.now() + clockOffset)) / 1000));
+      const label = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
+      timer.hidden = false;
+      timer.textContent = label;
+      timer.classList.toggle('urgent', remain <= 10);
+      // The overlay shows the very same countdown, so nothing drifts while the scene plays.
+      if (overlayTimerEl) {
+        overlayTimerEl.hidden = false;
+        overlayTimerEl.textContent = label;
+        overlayTimerEl.classList.toggle('urgent', remain <= 10);
+      }
     }
-    const remain = Math.max(0, Math.ceil((state.phaseEndsAt - (Date.now() + clockOffset)) / 1000));
-    const label = `${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, '0')}`;
-    timer.hidden = false;
-    timer.textContent = label;
-    timer.classList.toggle('urgent', remain <= 10);
-    // The overlay shows the very same countdown, so nothing drifts while the scene plays.
-    if (overlayTimerEl) {
-      overlayTimerEl.hidden = false;
-      overlayTimerEl.textContent = label;
-      overlayTimerEl.classList.toggle('urgent', remain <= 10);
+
+    // The Kamikaze revenge window runs on its own short deadline, independent of the phase timer.
+    const revenge = state && state.you.kamikazeRevenge;
+    const revengeTimer = $('kamikazeTimer');
+    if (revenge) {
+      const remain = Math.max(0, Math.ceil((revenge.deadline - (Date.now() + clockOffset)) / 1000));
+      revengeTimer.textContent = `0:${String(remain).padStart(2, '0')}`;
+      revengeTimer.classList.toggle('urgent', remain <= 5);
     }
   }
   setInterval(tick, 250);
@@ -2222,13 +2299,14 @@
     night: { title: 'phase.fx.night', sub: 'phase.fx.nightSub' },
     day: { title: 'phase.fx.day', sub: 'phase.fx.daySub' },
     voting: { title: 'phase.fx.voting', sub: 'phase.fx.votingSub' },
+    kamikaze: { title: 'kamikaze.fxTitle', sub: 'kamikaze.fxSub' },
   };
   const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const PHASE_FX_MS = REDUCED_MOTION ? 1600 : 2800;
   const supportsPopover = typeof overlay.showPopover === 'function';
   let overlayTimeout = null;
   let overlayTimerEl = null; // the <time> inside the running scene (null when no scene is playing)
-  let overlayScene = null;   // { phase, day } of the scene that is playing, for live retranslation
+  let overlayScene = null;   // { phase, day, extra } of the scene that is playing, for live retranslation
 
   function refreshOverlayText() {
     if (!overlayScene || !overlay.classList.contains('is-open')) return;
@@ -2236,7 +2314,7 @@
     const title = overlay.querySelector('.po-title');
     const sub = overlay.querySelector('.po-sub');
     if (title) title.textContent = t(fx.title);
-    if (sub) sub.textContent = t(fx.sub, { n: overlayScene.day });
+    if (sub) sub.textContent = t(fx.sub, { n: overlayScene.day, ...overlayScene.extra });
     $('phaseAnnouncer').textContent = t(fx.title);
   }
 
@@ -2263,13 +2341,19 @@
     overlayScene = null;
   }
 
-  function playPhaseTransition(phase, day) {
+  function playPhaseTransition(phase, day, extra = {}) {
     const fx = PHASE_FX[phase];
-    if (!fx) { closePhaseOverlay(); return; } // lobby / game over: no splash, and drop any running one
+    if (!fx) {
+      // Lobby / game over have no splash of their own, and normally clear any leftover scene —
+      // except a Kamikaze detonation already playing, which should finish even if the elimination
+      // it caused ends the game a moment later.
+      if (!(overlayScene && overlayScene.phase === 'kamikaze')) closePhaseOverlay();
+      return;
+    }
     $('phaseAnnouncer').textContent = t(fx.title); // screen readers get the message even without visuals
     if (document.hidden) return;
 
-    closePhaseOverlay(); // a newer phase replaces a scene that is still playing
+    closePhaseOverlay(); // a newer phase (or detonation) replaces a scene that is still playing
 
     const scene = $(`tpl-po-${phase}`).content.cloneNode(true);
     const stars = scene.querySelector('.po-stars');
@@ -2285,10 +2369,10 @@
         scene.querySelector('.po-hero'),
         el('div', { class: 'po-copy' },
           el('h2', { class: 'po-title', text: t(fx.title) }),
-          el('p', { class: 'po-sub', text: t(fx.sub, { n: day }) }))),
+          el('p', { class: 'po-sub', text: t(fx.sub, { n: day, ...extra }) }))),
       overlayTimerEl);
 
-    overlayScene = { phase, day };
+    overlayScene = { phase, day, extra };
     overlay.classList.add('is-open');
     if (supportsPopover) { try { overlay.showPopover(); } catch { /* already open */ } }
     tick(); // fill the timer right away
@@ -2465,6 +2549,7 @@
 
   $('advanceBtn').addEventListener('click', () => send('advance_phase', {}));
   $('skipVoteBtn').addEventListener('click', () => castVote(null));
+  $('kamikazeSkipBtn').addEventListener('click', () => useKamikazeAbility(null));
   $('returnBtn').addEventListener('click', () => send('play_again', {}));
 
   $('roleBtn').addEventListener('click', () => {
@@ -2549,16 +2634,25 @@
   socket.on('day_event', (e) => { ui.dayEvent = { day: e.day, killed: e.killed }; });
 
   socket.on('player_eliminated', (e) => {
-    if (!state || e.id !== state.you.id || e.cause === 'left') return;
+    if (!state || e.id !== state.you.id || e.cause === 'left' || e.cause === 'kamikaze_self') return;
     showModal({
       title: () => t('elim.title'),
-      tone: 'mafia',
+      tone: e.cause === 'kamikaze' ? 'kamikaze' : 'mafia',
       body: () => [
-        el('p', { text: t(e.cause === 'mafia' ? 'elim.mafia' : e.cause === 'vote' ? 'elim.vote' : 'elim.default') }),
+        el('p', {
+          text: t(e.cause === 'mafia' ? 'elim.mafia' : e.cause === 'vote' ? 'elim.vote' : e.cause === 'kamikaze' ? 'elim.kamikaze' : 'elim.default'),
+        }),
         el('p', { class: 'muted', text: t('elim.note') }),
       ],
       ok: () => t('elim.keep'),
     });
+  });
+
+  // The dedicated `kamikaze_detonated` broadcast drives the dramatic full-screen moment (both the
+  // active self-destruct and a spent revenge window fire it); `player_eliminated` above still covers
+  // the individually-tailored "you were eliminated" modal for whichever side of it was the viewer.
+  socket.on('kamikaze_detonated', (e) => {
+    playPhaseTransition('kamikaze', e.day, { kamikaze: e.by.name, target: e.target.name });
   });
 
   socket.on('investigation_result', (r) => {
